@@ -8,7 +8,7 @@
 
 # KobeanSQL
 
-> A cross-platform desktop SQL client that lets developers query, explore, and manage MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, and MongoDB databases from a single, beautiful native app — no browser, no cloud, no data leaving your machine.
+> A cross-platform desktop SQL client for developers — query, explore, and manage 12 database engines (MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle) from a single, beautiful native app — no browser, no cloud, no data leaving your machine.
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/kobenguyent/KobeanSQL/ci.yml?branch=main&style=flat-square&label=build)](https://github.com/kobenguyent/KobeanSQL/actions)
 [![Version](https://img.shields.io/github/package-json/v/kobenguyent/KobeanSQL?style=flat-square&color=7b7bea)](https://github.com/kobenguyent/KobeanSQL/releases/latest)
@@ -36,7 +36,7 @@
 ## ✨ Key Features
 
 ### Connection Management
-- **Multi-database support** — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server (MSSQL), and MongoDB from a single UI
+- **Multi-database support** — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server (MSSQL), MongoDB, CockroachDB, ClickHouse, Cassandra/ScyllaDB, Redis, Elasticsearch, and Oracle from a single UI
 - **Connection tester** — validate host/port/credentials before saving, with a clear success/error banner
 - **Persistent connections** — saved across app restarts; stored in your OS user-data directory
 - **Connection import / export** — portable JSON backup and restore with validation, duplicate detection, and selective password inclusion
@@ -80,14 +80,31 @@
 
 ## 🗄️ Supported Databases
 
-| Database     | Driver            | Default Port |
-|--------------|-------------------|--------------|
-| MySQL        | `mysql2`          | 3306         |
-| MariaDB      | `mysql2`          | 3306         |
-| PostgreSQL   | `pg`              | 5432         |
-| SQLite       | `better-sqlite3`  | — (file)     |
-| SQL Server   | `mssql`           | 1433         |
-| MongoDB      | `mongodb`         | 27017        |
+| Database          | Driver                     | Default Port |
+|-------------------|----------------------------|--------------|
+| MySQL             | `mysql2`                   | 3306         |
+| MariaDB           | `mysql2`                   | 3306         |
+| PostgreSQL        | `pg`                       | 5432         |
+| SQLite            | `better-sqlite3`           | — (file)     |
+| SQL Server        | `mssql`                    | 1433         |
+| MongoDB           | `mongodb`                  | 27017        |
+| CockroachDB       | `pg` (reused)              | 26257        |
+| ClickHouse        | `@clickhouse/client`       | 8123         |
+| Cassandra/ScyllaDB| `cassandra-driver`         | 9042         |
+| Redis             | `ioredis`                  | 6379         |
+| Elasticsearch     | `@elastic/elasticsearch`   | 9200         |
+| Oracle            | `oracledb`                 | 1521         |
+
+### Adapter Notes
+
+| Database       | Notes                                                                                                                        |
+|----------------|------------------------------------------------------------------------------------------------------------------------------|
+| CockroachDB    | Extends `PostgresAdapter`; overrides the default port to 26257 and parses CockroachDB-style version strings.                 |
+| ClickHouse     | HTTP-based; uses `JSONCompact` format for `SELECT` queries. Nullable columns are detected via `Nullable(…)` type wrapping.  |
+| Cassandra      | Reads schema from `system_schema.*` tables; CQL maps naturally to the existing query interface.                              |
+| Redis          | Free-form CLI commands are tokenized and dispatched via `ioredis`. Keys are listed with `SCAN`. Databases are selected with `SELECT n`. |
+| Elasticsearch  | Accepts JSON DSL or a simplified `INDEX: { … }` syntax. Nested mapping properties are flattened for `getColumns()`.         |
+| Oracle         | Queries `ALL_TABLES`, `ALL_VIEWS`, `ALL_TAB_COLUMNS`, and `ALL_PROCEDURES`. Trailing semicolons are stripped automatically (Oracle rejects them). Requires Oracle Instant Client — see [DEVELOPMENT.md](DEVELOPMENT.md) for prerequisites. |
 
 ---
 
@@ -105,16 +122,21 @@ KobeanSQL strictly follows Electron's two-process architecture with `contextIsol
 │  │  ConnectionManager  │   │  store.ts                │ │
 │  │  (pooling, routing) │   │  (JSON persistence +     │ │
 │  │                     │   │   safeStorage encrypt)   │ │
-│  │  ┌────────────────┐    │   └──────────────────────────┘ │
-│  │  │ MySQLAdapter   │    │   ┌──────────────────────────┐ │
-│  │  │ PGAdapter      │    │   │  AI Service              │ │
-│  │  │ SQLiteAdapter  │    │   │  (Ollama / OpenAI-compat)│ │
-│  │  │ MSSQLAdapter   │    │   └──────────────────────────┘ │
-│  │  │ MongoDBAdapter │    │   ┌──────────────────────────┐ │
-│  │  └────────────────┘    │   │  electron-log            │ │
-│  └─────────────────────┘   │   │  (file transport)        │ │
-│  IPC handlers registered    │   └──────────────────────────┘ │
-│  via registerIpcHandlers()                               │
+│  │  ┌──────────────┐   │   └──────────────────────────┘ │
+│  │  │ MySQLAdapter │   │   ┌──────────────────────────┐ │
+│  │  │ PGAdapter    │   │   │  AI Service              │ │
+│  │  │ SQLiteAdapter│   │   │  (Ollama / OpenAI-compat)│ │
+│  │  │ MSSQLAdapter │   │   └──────────────────────────┘ │
+│  │  │ MongoAdapter │   │   ┌──────────────────────────┐ │
+│  │  │ CockroachDB  │   │   │  electron-log            │ │
+│  │  │ ClickHouse   │   │   │  (file transport)        │ │
+│  │  │ Cassandra    │   │   └──────────────────────────┘ │
+│  │  │ Redis        │   │                                 │
+│  │  │ Elasticsearch│   │                                 │
+│  │  │ Oracle       │   │                                 │
+│  │  └──────────────┘   │                                 │
+│  └─────────────────────┘                                 │
+│  IPC handlers registered via registerIpcHandlers()       │
 └───────────────────────┬──────────────────────────────────┘
                         │  IPC (ipcMain / ipcRenderer)
 ┌───────────────────────▼──────────────────────────────────┐
@@ -163,7 +185,7 @@ KobeanSQL strictly follows Electron's two-process architecture with `contextIsol
 | Data grid      | `@tanstack/react-table`                 | 8       |
 | Schema diagram | `@xyflow/react` + `@dagrejs/dagre`      | 12 / 3  |
 | Icons          | `lucide-react`                          | 0.344   |
-| DB drivers     | `mysql2`, `pg`, `better-sqlite3`, `mssql`, `mongodb`| —      |
+| DB drivers     | `mysql2`, `pg`, `better-sqlite3`, `mssql`, `mongodb`, `@clickhouse/client`, `cassandra-driver`, `ioredis`, `@elastic/elasticsearch`, `oracledb`| —      |
 | Logging        | `electron-log`                          | 5       |
 | Tests          | Vitest + Playwright                     | 1 / 1   |
 | Packaging      | electron-builder                        | 24      |
@@ -273,7 +295,7 @@ Fill in the fields:
 | Field        | Description                                                                 |
 |--------------|-----------------------------------------------------------------------------|
 | Name         | A human-readable label for the connection (e.g., `prod-postgres-readonly`)  |
-| Type         | Database engine: MySQL / MariaDB / PostgreSQL / SQLite / SQL Server / MongoDB |
+| Type         | Database engine — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle |
 | Host         | Hostname or IP address (`127.0.0.1`, `db.example.com`)                      |
 | Port         | Default ports are pre-filled per engine                                     |
 | Database     | Default database / schema to connect to                                     |
@@ -471,7 +493,13 @@ src/
 │           ├── mysql.ts       # mysql2 adapter (MySQL + MariaDB)
 │           ├── postgres.ts    # pg adapter
 │           ├── sqlite.ts      # better-sqlite3 adapter
-│           └── mssql.ts       # mssql adapter
+│           ├── mssql.ts       # mssql adapter
+│           ├── cockroachdb.ts # pg adapter (extends PostgresAdapter)
+│           ├── clickhouse.ts  # @clickhouse/client adapter
+│           ├── cassandra.ts   # cassandra-driver adapter
+│           ├── redis.ts       # ioredis adapter
+│           ├── elasticsearch.ts # @elastic/elasticsearch adapter
+│           └── oracle.ts      # oracledb adapter
 ├── preload/
 │   └── index.ts               # contextBridge → window.db (typed API surface)
 └── renderer/
@@ -492,6 +520,8 @@ scripts/
 tests/
 ├── types.test.ts              # DB_COLORS / DB_DEFAULT_PORTS constants
 ├── manager.test.ts            # ConnectionManager unit tests (mocked adapters)
+├── redis-adapter.test.ts      # Redis CLI command tokenizer unit tests
+├── cockroachdb-adapter.test.ts# CockroachDB version parsing and port tests
 └── store.test.ts              # Connection persistence (load/save JSON)
 ```
 

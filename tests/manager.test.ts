@@ -81,6 +81,102 @@ vi.mock('../src/main/db/adapters/mongodb', () => ({
   }
 }))
 
+vi.mock('../src/main/db/adapters/cockroachdb', () => ({
+  CockroachDBAdapter: class {
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [], rows: [], rowCount: 0, duration: 1 } }
+    async getDatabases() { return ['defaultdb'] }
+    async getTables() { return [] }
+    async getColumns() { return [] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [] }
+    async ping() { return true }
+    async getServerVersion() { return 'CockroachDB v23.2.0' }
+  }
+}))
+
+vi.mock('../src/main/db/adapters/clickhouse', () => ({
+  ClickHouseAdapter: class {
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [], rows: [], rowCount: 0, duration: 1 } }
+    async getDatabases() { return ['default', 'system'] }
+    async getTables() { return [{ name: 'events', type: 'table' }] }
+    async getColumns() { return [] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [] }
+    async ping() { return true }
+    async getServerVersion() { return '24.1.0' }
+  }
+}))
+
+vi.mock('../src/main/db/adapters/cassandra', () => ({
+  CassandraAdapter: class {
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [], rows: [], rowCount: 0, duration: 1 } }
+    async getDatabases() { return ['my_keyspace'] }
+    async getTables() { return [{ name: 'users', type: 'table' }] }
+    async getColumns() { return [] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [] }
+    async ping() { return true }
+    async getServerVersion() { return 'Cassandra 4.1.3' }
+  }
+}))
+
+vi.mock('../src/main/db/adapters/redis', () => ({
+  RedisAdapter: class {
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [{ name: 'result', type: 'string' }], rows: [{ result: 'PONG' }], rowCount: 1, duration: 1 } }
+    async getDatabases() { return Array.from({ length: 16 }, (_, i) => String(i)) }
+    async getTables() { return [{ name: 'mykey', type: 'table' }] }
+    async getColumns() { return [{ name: 'value', type: 'string', nullable: true, primaryKey: false }] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [] }
+    async ping() { return true }
+    async getServerVersion() { return 'Redis 7.2.0' }
+  }
+}))
+
+vi.mock('../src/main/db/adapters/elasticsearch', () => ({
+  ElasticsearchAdapter: class {
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [], rows: [], rowCount: 0, duration: 1 } }
+    async getDatabases() { return ['default'] }
+    async getTables() { return [{ name: 'my-index', type: 'table' }] }
+    async getColumns() { return [] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [] }
+    async ping() { return true }
+    async getServerVersion() { return 'Elasticsearch 8.12.0' }
+  }
+}))
+
+vi.mock('../src/main/db/adapters/oracle', () => ({
+  OracleAdapter: class {
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [], rows: [], rowCount: 0, duration: 1 } }
+    async getDatabases() { return ['ORCL'] }
+    async getTables() { return [{ name: 'EMPLOYEES', type: 'table' }] }
+    async getColumns() { return [] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [{ name: 'GET_EMPLOYEE', schema: 'HR', type: 'procedure' }] }
+    async ping() { return true }
+    async getServerVersion() { return 'Oracle Database 19c' }
+  }
+}))
+
 describe('ConnectionManager', () => {
   let manager: ConnectionManager
 
@@ -291,5 +387,106 @@ describe('ConnectionManager', () => {
       // Restore original prototype method
       MySQLAdapter.prototype.isConnected = originalIsConnected
     }
+  })
+  it('connects to CockroachDB through the adapter', async () => {
+    const config = {
+      id: 'crdb-1',
+      name: 'CockroachDB Local',
+      type: 'cockroachdb' as const,
+      host: 'localhost',
+      port: 26257,
+      database: 'defaultdb'
+    }
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('crdb-1')).toBe(true)
+    await expect(manager.getDatabases('crdb-1')).resolves.toContain('defaultdb')
+    await expect(manager.getServerVersion('crdb-1')).resolves.toMatch(/CockroachDB/)
+  })
+
+  it('connects to ClickHouse through the adapter', async () => {
+    const config = {
+      id: 'ch-1',
+      name: 'ClickHouse Local',
+      type: 'clickhouse' as const,
+      host: 'localhost',
+      port: 8123,
+      database: 'default'
+    }
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('ch-1')).toBe(true)
+    await expect(manager.getDatabases('ch-1')).resolves.toContain('default')
+    await expect(manager.getTables('ch-1')).resolves.toHaveLength(1)
+  })
+
+  it('connects to Cassandra through the adapter', async () => {
+    const config = {
+      id: 'cass-1',
+      name: 'Cassandra Local',
+      type: 'cassandra' as const,
+      host: 'localhost',
+      port: 9042,
+      database: 'my_keyspace'
+    }
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('cass-1')).toBe(true)
+    await expect(manager.getDatabases('cass-1')).resolves.toContain('my_keyspace')
+    await expect(manager.getProcedures('cass-1')).resolves.toHaveLength(0)
+  })
+
+  it('connects to Redis through the adapter', async () => {
+    const config = {
+      id: 'redis-1',
+      name: 'Redis Local',
+      type: 'redis' as const,
+      host: 'localhost',
+      port: 6379
+    }
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('redis-1')).toBe(true)
+    const dbs = await manager.getDatabases('redis-1')
+    expect(dbs).toHaveLength(16)
+    expect(dbs[0]).toBe('0')
+    await expect(manager.query('redis-1', 'PING')).resolves.toMatchObject({ rowCount: 1 })
+  })
+
+  it('connects to Elasticsearch through the adapter', async () => {
+    const config = {
+      id: 'es-1',
+      name: 'Elasticsearch Local',
+      type: 'elasticsearch' as const,
+      host: 'localhost',
+      port: 9200
+    }
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('es-1')).toBe(true)
+    await expect(manager.getDatabases('es-1')).resolves.toEqual(['default'])
+    await expect(manager.getTables('es-1')).resolves.toHaveLength(1)
+  })
+
+  it('connects to Oracle through the adapter', async () => {
+    const config = {
+      id: 'ora-1',
+      name: 'Oracle Local',
+      type: 'oracle' as const,
+      host: 'localhost',
+      port: 1521,
+      database: 'ORCL',
+      user: 'HR',
+      password: 'secret'
+    }
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('ora-1')).toBe(true)
+    await expect(manager.getDatabases('ora-1')).resolves.toContain('ORCL')
+    const procs = await manager.getProcedures('ora-1')
+    expect(procs).toHaveLength(1)
+    expect(procs[0].name).toBe('GET_EMPLOYEE')
+    expect(procs[0].type).toBe('procedure')
+    await expect(manager.getServerVersion('ora-1')).resolves.toMatch(/Oracle/)
   })
 })

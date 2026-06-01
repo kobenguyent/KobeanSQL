@@ -5,6 +5,12 @@ import { PostgresAdapter } from './adapters/postgres'
 import { SQLiteAdapter } from './adapters/sqlite'
 import { MSSQLAdapter } from './adapters/mssql'
 import { MongoDBAdapter } from './adapters/mongodb'
+import { CockroachDBAdapter } from './adapters/cockroachdb'
+import { ClickHouseAdapter } from './adapters/clickhouse'
+import { CassandraAdapter } from './adapters/cassandra'
+import { RedisAdapter } from './adapters/redis'
+import { ElasticsearchAdapter } from './adapters/elasticsearch'
+import { OracleAdapter } from './adapters/oracle'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from './types'
 import { appLogger } from '../logger'
 
@@ -42,6 +48,18 @@ export class ConnectionManager extends EventEmitter {
         return new MSSQLAdapter()
       case 'mongodb':
         return new MongoDBAdapter()
+      case 'cockroachdb':
+        return new CockroachDBAdapter()
+      case 'clickhouse':
+        return new ClickHouseAdapter()
+      case 'cassandra':
+        return new CassandraAdapter()
+      case 'redis':
+        return new RedisAdapter()
+      case 'elasticsearch':
+        return new ElasticsearchAdapter()
+      case 'oracle':
+        return new OracleAdapter()
       default:
         throw new Error(`Unsupported database type: ${type}`)
     }
