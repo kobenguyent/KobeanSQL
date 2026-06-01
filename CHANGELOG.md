@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.15.0...v1.16.0) (2026-06-01)
+
+
+### Features
+
+* Add 6 new DB adapters: CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle ([#54](https://github.com/kobenguyent/KobeanSQL/issues/54)) ([829a447](https://github.com/kobenguyent/KobeanSQL/commit/829a447af7cbebb7dbbd3cc5e1f658ef7251a36b))
+
 # [1.15.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.14.0...v1.15.0) (2026-06-01)
 
 
