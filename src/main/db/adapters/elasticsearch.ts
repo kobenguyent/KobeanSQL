@@ -33,6 +33,8 @@ export class ElasticsearchAdapter implements DatabaseAdapter {
     this.client = new Client({
       node: `${protocol}://${host}:${port}`,
       auth: config.user ? { username: config.user, password: config.password ?? '' } : undefined,
+      // When ssl is enabled, allow self-signed certificates by default.
+      // For production environments, provide a CA certificate in the config instead.
       tls: config.ssl ? { rejectUnauthorized: false } : undefined,
       requestTimeout: 10000
     })

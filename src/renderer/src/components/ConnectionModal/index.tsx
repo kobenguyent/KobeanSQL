@@ -359,16 +359,18 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
                       : config.type === 'mssql'
                         ? '******host:1433/db'
                         : config.type === 'mongodb'
-                          ? '******host:27017/db' // betterleaks:allow - placeholder URI
+                          ? '******host:27017/db'
                           : config.type === 'redis'
-                            ? 'redis://host:6379/0'
+                            ? '******host:6379/0'
                             : config.type === 'elasticsearch'
                               ? 'http://host:9200'
                               : config.type === 'clickhouse'
                                 ? '******host:8123/default'
-                                : config.type === 'oracle'
-                                  ? '******host:1521/ORCL'
-                                  : '******host:3306/db'
+                                : config.type === 'cassandra'
+                                  ? '******host:9042/keyspace'
+                                  : config.type === 'oracle'
+                                    ? '******host:1521/ORCL'
+                                    : '******host:3306/db'
                   }
                 />
                 <div style={{ marginTop: 6, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>

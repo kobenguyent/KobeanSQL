@@ -86,7 +86,7 @@ export class ClickHouseAdapter implements DatabaseAdapter {
     return result.rows.map((r) => ({
       name: r['name'] as string,
       type: r['type'] as string,
-      nullable: String(r['default_expression'] ?? '').toLowerCase() === 'nullable',
+      nullable: (r['type'] as string ?? '').startsWith('Nullable('),
       primaryKey: false
     }))
   }

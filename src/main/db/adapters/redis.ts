@@ -105,28 +105,19 @@ export class RedisAdapter implements DatabaseAdapter {
 
   async getDatabases(): Promise<string[]> {
     // Redis databases are numbered 0–15 by default (configurable with databases directive)
-    try {
-      if (!this.client) return []
-      const info = await this.client.info('server')
-      const match = /^redis_version:(.+)$/m.exec(info)
-      void match // used below for version
-      // Return numbered database list 0..15
-      return Array.from({ length: 16 }, (_, i) => String(i))
-    } catch {
-      return Array.from({ length: 16 }, (_, i) => String(i))
-    }
+    return Array.from({ length: 16 }, (_, i) => String(i))
   }
 
   async getTables(database?: string): Promise<TableInfo[]> {
     if (!this.client) throw new Error('Not connected')
-    // Switch DB if requested
+    // Switch DB if requested using SELECT command
     const dbNum = database !== undefined ? parseInt(database, 10) : undefined
-    const client = dbNum !== undefined && !Number.isNaN(dbNum)
-      ? this.client.createConnectedClient?.() ?? this.client
-      : this.client
+    if (dbNum !== undefined && !Number.isNaN(dbNum)) {
+      await this.client.select(dbNum)
+    }
     try {
       // SCAN for all keys (limited to 100 for performance)
-      const [, keys] = await (client as Redis).scan(0, 'COUNT', 100)
+      const [, keys] = await (this.client as Redis).scan(0, 'COUNT', 100)
       return keys.map((key) => ({ name: key, type: 'table' as const }))
     } catch {
       return []
