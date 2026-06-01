@@ -14,7 +14,13 @@ const ALLOWED_SCHEMES: Record<DatabaseType, string[]> = {
   mariadb: ['mariadb', 'mysql'],
   mssql: ['mssql', 'sqlserver'],
   sqlite: ['sqlite'],
-  mongodb: ['mongodb', 'mongodb+srv']
+  mongodb: ['mongodb', 'mongodb+srv'],
+  cockroachdb: ['cockroachdb', 'postgres', 'postgresql'],
+  clickhouse: ['clickhouse', 'http', 'https'],
+  cassandra: ['cassandra'],
+  redis: ['redis', 'rediss'],
+  elasticsearch: ['http', 'https', 'elasticsearch'],
+  oracle: ['oracle', 'oracle+thin']
 }
 
 export function parseConnectionUriPreview(

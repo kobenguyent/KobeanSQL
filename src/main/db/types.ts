@@ -1,4 +1,4 @@
-export type DatabaseType = 'mysql' | 'mariadb' | 'postgres' | 'sqlite' | 'mssql' | 'mongodb'
+export type DatabaseType = 'mysql' | 'mariadb' | 'postgres' | 'sqlite' | 'mssql' | 'mongodb' | 'cockroachdb' | 'clickhouse' | 'cassandra' | 'redis' | 'elasticsearch' | 'oracle'
 
 export interface ConnectionConfig {
   id: string

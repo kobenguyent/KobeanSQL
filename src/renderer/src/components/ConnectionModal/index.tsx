@@ -68,6 +68,47 @@ const DB_LOGOS: Record<string, React.JSX.Element> = {
     <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
       <path d="M12.4 22.5c-.3-.9-.5-2.3-.5-3.8 0-2.3.4-4.7 1.3-7.1.8-2.3 2.1-4.9 3.8-7.7-2.4 2.1-4.3 4.7-5.7 7.7-1.2 2.8-1.8 5.4-1.8 7.8 0 1.1.1 2 .4 2.8C6.8 19.9 5.2 16.9 5.2 13c0-3.2 1.2-6 3.6-8.4C10.4 3 12.1 2 14 1.5c.7 1.5 1.4 3.5 1.8 5.8.4 2.4.4 4.6-.1 6.7-.7 3.4-1.8 6.2-3.3 8.5Z"/>
     </svg>
+  ),
+  cockroachdb: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <path d="M12 2C9.1 2 7 3.2 7 4.8v.6C5.2 6.2 4 7.5 4 9c0 1.2.7 2.2 1.8 2.9C5.3 12.5 5 13.2 5 14c0 2.2 1.8 4 4 4 .4 0 .8-.1 1.2-.2.5.8 1.1 1.4 1.8 1.8V21h2v-1.4c.7-.4 1.3-1 1.8-1.8.4.1.8.2 1.2.2 2.2 0 4-1.8 4-4 0-.8-.3-1.5-.8-2.1C21.3 11.2 22 10.2 22 9c0-1.5-1.2-2.8-3-3.6V4.8C19 3.2 16.9 2 14 2h-2zm0 2h2c2.2 0 3 .9 3 .8v.3c-.9-.3-2-.5-3-.5-1 0-2.1.2-3 .5v-.3c0 .1.8-.8 3-.8zM12 7c1.1 0 2.1.2 3 .6.9.4 1.6.9 2 1.4.4.5.5 1 .5 1.5 0 .4-.1.8-.4 1.2-.3.4-.7.7-1.2.9.2.4.3.8.3 1.2 0 1.1-.9 2-2 2-.4 0-.8-.1-1.1-.3-.6.5-1.3.9-2.1.9s-1.5-.4-2.1-.9c-.3.2-.7.3-1.1.3-1.1 0-2-.9-2-2 0-.4.1-.8.3-1.2-.5-.2-.9-.5-1.2-.9C6.1 11.3 6 10.9 6 10.5c0-.5.2-1 .5-1.5.4-.5 1.1-1 2-1.4.9-.4 1.9-.6 3-.6z"/>
+    </svg>
+  ),
+  clickhouse: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <rect x="2" y="4" width="3" height="16" rx="1"/>
+      <rect x="7" y="4" width="3" height="16" rx="1"/>
+      <rect x="12" y="4" width="3" height="16" rx="1"/>
+      <rect x="17" y="4" width="3" height="10" rx="1" opacity="0.5"/>
+    </svg>
+  ),
+  cassandra: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <ellipse cx="12" cy="12" rx="10" ry="4"/>
+      <path d="M2 12c0 2.2 4.5 4 10 4s10-1.8 10-4" fill="none" stroke="white" strokeWidth="1.5"/>
+      <path d="M2 16c0 2.2 4.5 4 10 4s10-1.8 10-4" fill="none" stroke="white" strokeWidth="1.5"/>
+    </svg>
+  ),
+  redis: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <path d="M21 8.5l-9 4.5-9-4.5 9-4.5 9 4.5z"/>
+      <path d="M3 8.5v3.5l9 4.5 9-4.5V8.5" fill="none" stroke="white" strokeWidth="1.5"/>
+      <path d="M3 13v3.5l9 4.5 9-4.5V13" fill="none" stroke="white" strokeWidth="1.5"/>
+    </svg>
+  ),
+  elasticsearch: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <circle cx="12" cy="12" r="10" fill="none" stroke="white" strokeWidth="1.5"/>
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="2" y1="12" x2="7" y2="12" stroke="white" strokeWidth="1.5"/>
+      <line x1="17" y1="12" x2="22" y2="12" stroke="white" strokeWidth="1.5"/>
+    </svg>
+  ),
+  oracle: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <ellipse cx="12" cy="12" rx="10" ry="5" fill="none" stroke="white" strokeWidth="1.5"/>
+      <line x1="2" y1="12" x2="22" y2="12" stroke="white" strokeWidth="1.5"/>
+    </svg>
   )
 }
 
@@ -77,7 +118,13 @@ const DB_TYPES: { value: DatabaseType; label: string; color: string }[] = [
   { value: 'postgres', label: 'PostgreSQL', color: '#1a1a2e' },
   { value: 'sqlite', label: 'SQLite', color: '#0f80cc' },
   { value: 'mssql', label: 'SQL Server', color: '#f87171' },
-  { value: 'mongodb', label: 'MongoDB', color: '#10b981' }
+  { value: 'mongodb', label: 'MongoDB', color: '#10b981' },
+  { value: 'cockroachdb', label: 'CockroachDB', color: '#6934d4' },
+  { value: 'clickhouse', label: 'ClickHouse', color: '#facc15' },
+  { value: 'cassandra', label: 'Cassandra', color: '#1287b1' },
+  { value: 'redis', label: 'Redis', color: '#dc2626' },
+  { value: 'elasticsearch', label: 'Elasticsearch', color: '#f59e0b' },
+  { value: 'oracle', label: 'Oracle', color: '#e11d48' }
 ]
 
 const defaultConfig = (): Omit<ConnectionConfig, 'id'> => ({
@@ -307,13 +354,21 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
                   value={config.connectionUri ?? ''}
                   onChange={(e) => update('connectionUri', e.target.value)}
                   placeholder={
-                    config.type === 'postgres'
-                      ? 'postgresql://user:pass@host:5432/db'
+                    config.type === 'postgres' || config.type === 'cockroachdb'
+                      ? '******host:5432/db'
                       : config.type === 'mssql'
-                        ? 'mssql://user:pass@host:1433/db'
+                        ? '******host:1433/db'
                         : config.type === 'mongodb'
-                          ? 'mongodb://user:pass@host:27017/db' // betterleaks:allow - placeholder URI
-                          : 'mysql://user:pass@host:3306/db'
+                          ? '******host:27017/db' // betterleaks:allow - placeholder URI
+                          : config.type === 'redis'
+                            ? 'redis://host:6379/0'
+                            : config.type === 'elasticsearch'
+                              ? 'http://host:9200'
+                              : config.type === 'clickhouse'
+                                ? '******host:8123/default'
+                                : config.type === 'oracle'
+                                  ? '******host:1521/ORCL'
+                                  : '******host:3306/db'
                   }
                 />
                 <div style={{ marginTop: 6, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>

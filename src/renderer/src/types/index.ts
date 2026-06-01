@@ -1,4 +1,4 @@
-export type DatabaseType = 'mysql' | 'mariadb' | 'postgres' | 'sqlite' | 'mssql' | 'mongodb'
+export type DatabaseType = 'mysql' | 'mariadb' | 'postgres' | 'sqlite' | 'mssql' | 'mongodb' | 'cockroachdb' | 'clickhouse' | 'cassandra' | 'redis' | 'elasticsearch' | 'oracle'
 
 export interface ConnectionConfig {
   id: string
@@ -141,7 +141,13 @@ export const DB_COLORS: Record<DatabaseType, string> = {
   postgres: '#60a5fa',
   sqlite: '#4ade80',
   mssql: '#f87171',
-  mongodb: '#10b981'
+  mongodb: '#10b981',
+  cockroachdb: '#6934d4',
+  clickhouse: '#facc15',
+  cassandra: '#1287b1',
+  redis: '#dc2626',
+  elasticsearch: '#f59e0b',
+  oracle: '#e11d48'
 }
 
 export const DB_DEFAULT_PORTS: Record<DatabaseType, number | undefined> = {
@@ -150,5 +156,11 @@ export const DB_DEFAULT_PORTS: Record<DatabaseType, number | undefined> = {
   postgres: 5432,
   sqlite: undefined,
   mssql: 1433,
-  mongodb: 27017
+  mongodb: 27017,
+  cockroachdb: 26257,
+  clickhouse: 8123,
+  cassandra: 9042,
+  redis: 6379,
+  elasticsearch: 9200,
+  oracle: 1521
 }
