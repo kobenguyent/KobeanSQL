@@ -6,7 +6,7 @@
   <title>KobeanSQL – Modern SQL Client</title>
   <meta name="description" content="KobeanSQL is a beautiful, modern SQL database client for desktop built with Electron, React, and an Apple-inspired glassmorphism UI." />
   <meta property="og:title" content="KobeanSQL – Modern SQL Client" />
-  <meta property="og:description" content="Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, and MongoDB with a beautiful glassmorphism interface." />
+  <meta property="og:description" content="Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle with a beautiful glassmorphism interface." />
   <meta property="og:type" content="website" />
   <link id="site-favicon" rel="icon" type="image/svg+xml" href="assets/kobeansql-logo-mark-light.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -44,6 +44,12 @@
       --sqlite: #4ade80;
       --mssql: #f87171;
       --mariadb: #c084fc;
+      --cockroachdb: #6934d4;
+      --clickhouse: #facc15;
+      --cassandra: #1287b1;
+      --redis: #dc2626;
+      --elasticsearch: #f59e0b;
+      --oracle: #e11d48;
       --font: 'Inter', -apple-system, system-ui, sans-serif;
       --mono: 'JetBrains Mono', monospace;
       --radius: 14px;
@@ -561,7 +567,7 @@
       <h1>Beautiful SQL<br>for every database</h1>
       <p>
         KobeanSQL is a modern desktop SQL client with an Apple-inspired glassmorphism interface.
-        Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, and MongoDB.
+        Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle.
         Visualize schema relationships and use local-only AI workflows.
       </p>
       <div class="hero-actions">
@@ -612,7 +618,7 @@
         <div class="feature-card">
           <span class="feature-icon">🗄️</span>
           <h3>Multi-Database Support</h3>
-          <p>Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, and MongoDB from the same app with native drivers.</p>
+          <p>Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle from the same app with native drivers.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🗂️</span>
@@ -733,6 +739,42 @@
           <p>mongodb driver</p>
           <span class="port">:27017</span>
         </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#6934d4,#7c3aed)">CR</div>
+          <h3>CockroachDB</h3>
+          <p>pg driver (reused)</p>
+          <span class="port">:26257</span>
+        </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#facc15,#eab308)">CH</div>
+          <h3>ClickHouse</h3>
+          <p>@clickhouse/client</p>
+          <span class="port">:8123</span>
+        </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#1287b1,#0e7490)">CS</div>
+          <h3>Cassandra</h3>
+          <p>cassandra-driver</p>
+          <span class="port">:9042</span>
+        </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#dc2626,#b91c1c)">RD</div>
+          <h3>Redis</h3>
+          <p>ioredis</p>
+          <span class="port">:6379</span>
+        </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#f59e0b,#d97706)">ES</div>
+          <h3>Elasticsearch</h3>
+          <p>@elastic/elasticsearch</p>
+          <span class="port">:9200</span>
+        </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#e11d48,#be185d)">OR</div>
+          <h3>Oracle</h3>
+          <p>oracledb</p>
+          <span class="port">:1521</span>
+        </div>
       </div>
     </section>
 
@@ -834,7 +876,7 @@
           <thead><tr><th>Field</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>Name</code></td><td>Human-readable label (e.g. <code>prod-postgres-readonly</code>)</td></tr>
-            <tr><td><code>Type</code></td><td>Database engine: MySQL / MariaDB / PostgreSQL / SQLite / SQL Server / MongoDB</td></tr>
+            <tr><td><code>Type</code></td><td>Database engine — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle</td></tr>
             <tr><td><code>Host</code></td><td>Hostname or IP address</td></tr>
             <tr><td><code>Port</code></td><td>Default ports are pre-filled per engine</td></tr>
             <tr><td><code>Database</code></td><td>Default database / schema</td></tr>
