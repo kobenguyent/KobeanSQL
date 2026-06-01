@@ -73,7 +73,7 @@ function getDefaultSettings(): AppSettings {
 
 const getStorePath = (): string => path.join(app.getPath('userData'), 'connections.json')
 const getSavedQueriesPath = (): string => path.join(app.getPath('userData'), 'saved-queries.json')
-const SUPPORTED_DB_TYPES: DatabaseType[] = ['mysql', 'mariadb', 'postgres', 'sqlite', 'mssql']
+const SUPPORTED_DB_TYPES: DatabaseType[] = ['mysql', 'mariadb', 'postgres', 'sqlite', 'mssql', 'mongodb']
 const getSettingsPath = (): string => path.join(app.getPath('userData'), 'settings.json')
 
 /** Prefix used to distinguish safeStorage-encrypted values from plaintext. */

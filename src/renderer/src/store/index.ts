@@ -31,6 +31,28 @@ function loadPersistedTheme(): 'dark' | 'light' | 'system' | 'matrix' | 'cyberpu
 
 const MAX_QUERY_HISTORY = 200
 
+function asFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function normalizeHistoryEntry(entry: unknown, index: number): QueryHistoryEntry {
+  const record = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>
+  const now = Date.now()
+  const fallbackId = `history-${now}-${index}`
+  return {
+    id: typeof record.id === 'string' && record.id.trim() ? record.id : fallbackId,
+    sql: typeof record.sql === 'string' ? record.sql : String(record.sql ?? ''),
+    connectionId: record.connectionId == null ? null : String(record.connectionId),
+    connectionName: typeof record.connectionName === 'string' && record.connectionName.trim()
+      ? record.connectionName
+      : 'Unknown connection',
+    timestamp: asFiniteNumber(record.timestamp, now),
+    duration: asFiniteNumber(record.duration, 0),
+    rowCount: asFiniteNumber(record.rowCount, 0),
+    error: typeof record.error === 'string' && record.error ? record.error : undefined
+  }
+}
+
 // Required for Immer to handle Set and Map mutations inside producers
 enableMapSet()
 
@@ -829,8 +851,9 @@ export const useAppStore = create<AppState>()(
     loadHistory: async () => {
       try {
         const entries = await window.db.getPersistedHistory(MAX_QUERY_HISTORY)
+        const normalized = entries.map((entry, index) => normalizeHistoryEntry(entry, index))
         set((s) => {
-          s.queryHistory = entries
+          s.queryHistory = normalized
         })
       } catch {/* ignore — degraded gracefully if local store is unavailable */}
     },

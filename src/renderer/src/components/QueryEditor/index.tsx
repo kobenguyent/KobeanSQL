@@ -85,6 +85,8 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
         return 'SQLite'
       case 'mssql':
         return 'SQL Server'
+      case 'mongodb':
+        return 'MongoDB'
       default:
         return 'SQL'
     }
@@ -179,6 +181,10 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
 
   const handleBeautifySql = useCallback(() => {
     if (!tab.sql.trim()) return
+    if (activeConnection?.type === 'mongodb') {
+      setStatus('Beautify SQL is not available for MongoDB queries', 'warning')
+      return
+    }
     try {
       const beautified = format(tab.sql, {
         language: getSqlLanguage(activeConnection?.type),

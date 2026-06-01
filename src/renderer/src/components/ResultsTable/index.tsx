@@ -100,6 +100,52 @@ export function buildDeleteSql(
   return `DELETE FROM ${tableRef}\nWHERE ${whereCl};`
 }
 
+function isLikelyObjectId(value: string): boolean {
+  return /^[a-fA-F0-9]{24}$/.test(value)
+}
+
+/**
+ * For ObjectId-looking values we emit a dual filter to match both string-based
+ * and ObjectId-based `_id` documents.
+ */
+export function buildMongoPkFilter(row: Record<string, unknown>, pkColumns: ColumnInfo[]): Record<string, unknown> | null {
+  if (!pkColumns.some((pk) => pk.name === '_id')) return null
+  const idValue = row._id
+  if (idValue === undefined) return null
+
+  if (typeof idValue === 'string' && isLikelyObjectId(idValue)) {
+    return {
+      $or: [{ _id: idValue }, { _id: { $oid: idValue } }]
+    }
+  }
+  return { _id: idValue }
+}
+
+export function buildInlineUpdateMongoQuery(
+  row: Record<string, unknown>,
+  col: string,
+  newVal: unknown,
+  pkColumns: ColumnInfo[],
+  collectionName: string
+): string | null {
+  const filter = buildMongoPkFilter(row, pkColumns)
+  if (!filter) return null
+  const safeCollectionName = JSON.stringify(collectionName)
+  const update = { $set: { [col]: newVal } }
+  return `db.getCollection(${safeCollectionName}).updateOne(${JSON.stringify(filter)},${JSON.stringify(update)})`
+}
+
+export function buildDeleteMongoQuery(
+  row: Record<string, unknown>,
+  pkColumns: ColumnInfo[],
+  collectionName: string
+): string | null {
+  const filter = buildMongoPkFilter(row, pkColumns)
+  if (!filter) return null
+  const safeCollectionName = JSON.stringify(collectionName)
+  return `db.getCollection(${safeCollectionName}).deleteOne(${JSON.stringify(filter)})`
+}
+
 export function getVisibleRowSelectionRange(
   rows: Array<{ index: number }>,
   anchorRowIdx: number,
@@ -512,6 +558,9 @@ export function ResultsTable({
     col: string,
     newVal: unknown
   ): string | null {
+    if (conn?.type === 'mongodb') {
+      return buildInlineUpdateMongoQuery(row, col, newVal, pkColumns, tableName!)
+    }
     return buildInlineUpdateSql(
       row,
       col,
@@ -613,6 +662,9 @@ export function ResultsTable({
   }
 
   function buildDeleteSqlForRow(row: Record<string, unknown>): string | null {
+    if (conn?.type === 'mongodb') {
+      return buildDeleteMongoQuery(row, pkColumns, tableName!)
+    }
     return buildDeleteSql(row, pkColumns, tableName!, database, schema, conn?.type)
   }
 

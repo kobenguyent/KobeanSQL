@@ -10,7 +10,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        external: ['better-sqlite3', 'mysql2', 'pg', 'mssql']
+        external: ['better-sqlite3', 'mysql2', 'pg', 'mssql', 'mongodb']
       }
     }
   },

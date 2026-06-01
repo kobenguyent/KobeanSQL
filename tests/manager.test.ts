@@ -65,6 +65,22 @@ vi.mock('../src/main/db/adapters/mssql', () => ({
   }
 }))
 
+vi.mock('../src/main/db/adapters/mongodb', () => ({
+  MongoDBAdapter: class {
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [{ name: 'name', type: 'string' }], rows: [{ name: 'Ada' }], rowCount: 1, duration: 1 } }
+    async getDatabases() { return ['admin', 'app'] }
+    async getTables() { return [{ name: 'users', type: 'table' }] }
+    async getColumns() { return [{ name: '_id', type: 'object', nullable: false, primaryKey: true }] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [] }
+    async ping() { return true }
+    async getServerVersion() { return 'MongoDB 7.0.4' }
+  }
+}))
+
 describe('ConnectionManager', () => {
   let manager: ConnectionManager
 
@@ -218,6 +234,26 @@ describe('ConnectionManager', () => {
     expect(procs.length).toBeGreaterThan(0)
     expect(procs[0]).toHaveProperty('specificName')
     expect(procs[0].specificName).toBe('my_func_12345')
+  })
+
+  it('connects and queries MongoDB through the adapter', async () => {
+    const config = {
+      id: 'mongo-1',
+      name: 'Mongo App',
+      type: 'mongodb' as const,
+      host: 'localhost',
+      port: 27017,
+      database: 'app'
+    }
+
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('mongo-1')).toBe(true)
+    await expect(manager.getDatabases('mongo-1')).resolves.toEqual(['admin', 'app'])
+    await expect(manager.query('mongo-1', 'db.users.find({})')).resolves.toMatchObject({
+      rowCount: 1,
+      rows: [{ name: 'Ada' }]
+    })
   })
 
   it('isConnected delegates to adapter.isConnected()', async () => {

@@ -3,9 +3,12 @@ import type { ConnectionConfig } from '../src/renderer/src/types'
 import {
   buildInlineUpdateSql,
   buildDeleteSql,
+  buildDeleteMongoQuery,
   canPreviewCellValue,
+  buildInlineUpdateMongoQuery,
   getSelectedVisibleRows,
   getVisibleRowSelectionRange,
+  buildMongoPkFilter,
   quoteIdentifierForDb,
   quoteValueForDb
 } from '../src/renderer/src/components/ResultsTable'
@@ -94,19 +97,22 @@ describe('E2E feature flows', () => {
     const useAppStore = await loadStoreWithDb(db)
     useAppStore.setState({
       settings: { queryLimit: 25 },
-      connectedIds: new Set(['mssql-1', 'pg-1']),
+      connectedIds: new Set(['mssql-1', 'pg-1', 'mongo-1']),
       connections: [
         { id: 'mssql-1', name: 'SQL Server', type: 'mssql' },
-        { id: 'pg-1', name: 'PG', type: 'postgres' }
+        { id: 'pg-1', name: 'PG', type: 'postgres' },
+        { id: 'mongo-1', name: 'Mongo', type: 'mongodb' }
       ] as ConnectionConfig[]
     })
 
     await useAppStore.getState().openTableInTab('mssql-1', 'Orders', 'salesdb', 'reporting')
     await useAppStore.getState().openTableInTab('pg-1', 'users', 'appdb')
+    await useAppStore.getState().openTableInTab('mongo-1', 'users', 'app')
 
     const sqlTabs = useAppStore.getState().tabs.map((t) => t.sql)
     expect(sqlTabs).toContain('SELECT TOP 25 * FROM [reporting].[Orders];')
     expect(sqlTabs).toContain('SELECT * FROM "appdb"."users" LIMIT 25;')
+    expect(sqlTabs).toContain('db.users.find({}).limit(25)')
   })
 
   it('stores SQL error in tab result when query returns an error (e.g. LIKE %pattern%)', async () => {
@@ -162,6 +168,34 @@ describe('E2E feature flows', () => {
     expect(history[0].id).toBe('h-204')
     expect(history[199].id).toBe('h-5')
   })
+
+  it('sanitizes malformed persisted history entries on load', async () => {
+    const db = createDbMock({
+      getPersistedHistory: vi.fn().mockResolvedValue([
+        {
+          id: '',
+          sql: null,
+          connectionId: 42,
+          connectionName: '',
+          timestamp: 'bad',
+          duration: 'NaN',
+          rowCount: undefined
+        }
+      ])
+    })
+    const useAppStore = await loadStoreWithDb(db)
+
+    await useAppStore.getState().loadHistory()
+
+    const [entry] = useAppStore.getState().queryHistory
+    expect(entry.id).toMatch(/^history-/)
+    expect(entry.sql).toBe('')
+    expect(entry.connectionId).toBe('42')
+    expect(entry.connectionName).toBe('Unknown connection')
+    expect(typeof entry.timestamp).toBe('number')
+    expect(entry.duration).toBe(0)
+    expect(entry.rowCount).toBe(0)
+  })
 })
 
 describe('SQL and status formatting helpers', () => {
@@ -216,6 +250,36 @@ describe('SQL and status formatting helpers', () => {
       'postgres'
     )
     expect(sql).toBeNull()
+  })
+
+  it('builds MongoDB inline update/delete queries scoped to _id PK', () => {
+    const pkColumns = [{ name: '_id', type: 'objectId', nullable: false, primaryKey: true }]
+    const updateQuery = buildInlineUpdateMongoQuery(
+      { _id: '507f191e810c19729de860ea', name: 'before' },
+      'name',
+      'after',
+      pkColumns,
+      'users'
+    )
+    const deleteQuery = buildDeleteMongoQuery(
+      { _id: '507f191e810c19729de860ea' },
+      pkColumns,
+      'users'
+    )
+
+    expect(updateQuery).toBe(
+      'db.getCollection("users").updateOne({"$or":[{"_id":"507f191e810c19729de860ea"},{"_id":{"$oid":"507f191e810c19729de860ea"}}]},{"$set":{"name":"after"}})'
+    )
+    expect(deleteQuery).toBe(
+      'db.getCollection("users").deleteOne({"$or":[{"_id":"507f191e810c19729de860ea"},{"_id":{"$oid":"507f191e810c19729de860ea"}}]})'
+    )
+  })
+
+  it('returns null mongo edit filters when _id PK is unavailable', () => {
+    const pkColumns = [{ name: 'id', type: 'number', nullable: false, primaryKey: true }]
+    expect(buildMongoPkFilter({ _id: '507f191e810c19729de860ea' }, pkColumns)).toBeNull()
+    expect(buildInlineUpdateMongoQuery({ _id: '507f191e810c19729de860ea' }, 'name', 'x', pkColumns, 'users')).toBeNull()
+    expect(buildDeleteMongoQuery({ _id: '507f191e810c19729de860ea' }, pkColumns, 'users')).toBeNull()
   })
 
   it('marks multiline or very long values as previewable cell content', () => {

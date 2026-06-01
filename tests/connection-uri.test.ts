@@ -41,6 +41,31 @@ describe('connection URI parsing', () => {
     })
   })
 
+  it('parses mongodb URI', () => {
+    const parsed = parseConnectionUri('mongodb', 'mongodb://root:pass@localhost:27017/app?ssl=true') // betterleaks:allow - test fixture
+
+    expect(parsed).toEqual({
+      host: 'localhost',
+      port: 27017,
+      user: 'root',
+      password: 'pass',
+      database: 'app',
+      ssl: true
+    })
+  })
+
+  it('parses mongodb+srv URI', () => {
+    const parsed = parseConnectionUri('mongodb', 'mongodb+srv://alice:secret@cluster.example.com/app') // betterleaks:allow - test fixture
+
+    expect(parsed).toEqual({
+      host: 'cluster.example.com',
+      port: undefined,
+      user: 'alice',
+      password: 'secret',
+      database: 'app'
+    })
+  })
+
   it('throws on invalid scheme for type', () => {
     expect(() => parseConnectionUri('postgres', 'mysql://root:pass@localhost:3306/db')).toThrow(
       'Invalid URI scheme for postgres'

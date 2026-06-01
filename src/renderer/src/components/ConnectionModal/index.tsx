@@ -63,6 +63,11 @@ const DB_LOGOS: Record<string, React.JSX.Element> = {
       <path d="M3 10v5c0 1.66 4.03 3 9 3s9-1.34 9-3v-5" fill="none" stroke="white" strokeWidth="1.5"/>
       <path d="M3 15v4c0 1.66 4.03 3 9 3s9-1.34 9-3v-4" fill="none" stroke="white" strokeWidth="1.5"/>
     </svg>
+  ),
+  mongodb: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <path d="M12.4 22.5c-.3-.9-.5-2.3-.5-3.8 0-2.3.4-4.7 1.3-7.1.8-2.3 2.1-4.9 3.8-7.7-2.4 2.1-4.3 4.7-5.7 7.7-1.2 2.8-1.8 5.4-1.8 7.8 0 1.1.1 2 .4 2.8C6.8 19.9 5.2 16.9 5.2 13c0-3.2 1.2-6 3.6-8.4C10.4 3 12.1 2 14 1.5c.7 1.5 1.4 3.5 1.8 5.8.4 2.4.4 4.6-.1 6.7-.7 3.4-1.8 6.2-3.3 8.5Z"/>
+    </svg>
   )
 }
 
@@ -71,7 +76,8 @@ const DB_TYPES: { value: DatabaseType; label: string; color: string }[] = [
   { value: 'mariadb', label: 'MariaDB', color: '#c084fc' },
   { value: 'postgres', label: 'PostgreSQL', color: '#1a1a2e' },
   { value: 'sqlite', label: 'SQLite', color: '#0f80cc' },
-  { value: 'mssql', label: 'SQL Server', color: '#f87171' }
+  { value: 'mssql', label: 'SQL Server', color: '#f87171' },
+  { value: 'mongodb', label: 'MongoDB', color: '#10b981' }
 ]
 
 const defaultConfig = (): Omit<ConnectionConfig, 'id'> => ({
@@ -305,7 +311,9 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
                       ? 'postgresql://user:pass@host:5432/db'
                       : config.type === 'mssql'
                         ? 'mssql://user:pass@host:1433/db'
-                        : 'mysql://user:pass@host:3306/db'
+                        : config.type === 'mongodb'
+                          ? 'mongodb://user:pass@host:27017/db' // betterleaks:allow - placeholder URI
+                          : 'mysql://user:pass@host:3306/db'
                   }
                 />
                 <div style={{ marginTop: 6, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>

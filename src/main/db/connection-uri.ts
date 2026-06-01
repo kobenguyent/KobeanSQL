@@ -14,7 +14,8 @@ const ALLOWED_SCHEMES: Record<DatabaseType, string[]> = {
   mysql: ['mysql'],
   mariadb: ['mariadb', 'mysql'],
   mssql: ['mssql', 'sqlserver'],
-  sqlite: ['sqlite']
+  sqlite: ['sqlite'],
+  mongodb: ['mongodb', 'mongodb+srv']
 }
 
 function decodePart(value: string): string {

@@ -18,4 +18,15 @@ describe('connection URI preview parsing', () => {
     const result = parseConnectionUriPreview('postgres', 'mysql://root:pass@localhost:3306/test')
     expect(result.error).toContain('Invalid URI scheme for postgres')
   })
+
+  it('returns parsed preview for mongodb+srv uri', () => {
+    const result = parseConnectionUriPreview('mongodb', 'mongodb+srv://alice:secret@cluster.example.com/app') // betterleaks:allow - test fixture
+
+    expect(result.error).toBeUndefined()
+    expect(result.parsed).toMatchObject({
+      host: 'cluster.example.com',
+      user: 'alice',
+      database: 'app'
+    })
+  })
 })

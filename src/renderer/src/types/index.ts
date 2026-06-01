@@ -1,4 +1,4 @@
-export type DatabaseType = 'mysql' | 'mariadb' | 'postgres' | 'sqlite' | 'mssql'
+export type DatabaseType = 'mysql' | 'mariadb' | 'postgres' | 'sqlite' | 'mssql' | 'mongodb'
 
 export interface ConnectionConfig {
   id: string
@@ -140,7 +140,8 @@ export const DB_COLORS: Record<DatabaseType, string> = {
   mariadb: '#c084fc',
   postgres: '#60a5fa',
   sqlite: '#4ade80',
-  mssql: '#f87171'
+  mssql: '#f87171',
+  mongodb: '#10b981'
 }
 
 export const DB_DEFAULT_PORTS: Record<DatabaseType, number | undefined> = {
@@ -148,5 +149,6 @@ export const DB_DEFAULT_PORTS: Record<DatabaseType, number | undefined> = {
   mariadb: 3306,
   postgres: 5432,
   sqlite: undefined,
-  mssql: 1433
+  mssql: 1433,
+  mongodb: 27017
 }

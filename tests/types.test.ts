@@ -3,7 +3,7 @@ import { DB_COLORS, DB_DEFAULT_PORTS } from '../src/renderer/src/types'
 
 describe('DB_COLORS', () => {
   it('has a color for every supported database type', () => {
-    const types = ['mysql', 'mariadb', 'postgres', 'sqlite', 'mssql'] as const
+    const types = ['mysql', 'mariadb', 'postgres', 'sqlite', 'mssql', 'mongodb'] as const
     for (const type of types) {
       expect(DB_COLORS[type]).toMatch(/^#[0-9a-fA-F]{6}$/)
     }
@@ -29,5 +29,9 @@ describe('DB_DEFAULT_PORTS', () => {
 
   it('returns correct default port for SQL Server', () => {
     expect(DB_DEFAULT_PORTS['mssql']).toBe(1433)
+  })
+
+  it('returns correct default port for MongoDB', () => {
+    expect(DB_DEFAULT_PORTS['mongodb']).toBe(27017)
   })
 })

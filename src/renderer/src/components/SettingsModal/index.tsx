@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../../store'
 import { useTranslation } from '../../hooks/useTranslation'
 import { getSupportedLocales, setLocale, getLocale } from '../../i18n'
-import {createPortal} from "react-dom";
+import { createPortal } from 'react-dom'
 
 interface Props {
   onClose: () => void
@@ -102,6 +102,11 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
     hasSavedRef.current = true
     setSaving(false)
     onClose()
+  }
+
+  // Guard against non-DOM render environments; the modal is only meaningful in renderer.
+  if (typeof document === 'undefined' || !document.body) {
+    return <></>
   }
 
   return createPortal(
@@ -251,5 +256,5 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
         </div>
       </div>
     </div>
-  )
+  , document.body)
 }

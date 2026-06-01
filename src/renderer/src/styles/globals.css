@@ -326,6 +326,13 @@ html, body, #root {
   margin-left: auto;
 }
 
+/* Electron drag regions can still swallow clicks on nested controls unless
+   descendants are explicitly marked as no-drag as well. */
+.titlebar-actions,
+.titlebar-actions * {
+  -webkit-app-region: no-drag;
+}
+
 /* ── Main Layout ────────────────────────────────────────────── */
 .main-layout {
   display: flex;
@@ -1186,7 +1193,9 @@ html, body, #root {
   width: 520px;
   max-width: 95vw;
   max-height: 90vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   animation: slideUp var(--transition-base) ease;
 }
 @keyframes slideUp {
@@ -1200,9 +1209,17 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 .modal-title { font-size: var(--font-size-lg); font-weight: 600; color: var(--text-primary); }
-.modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+.modal-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  min-height: 0;
+}
 .modal-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--glass-border);
@@ -1210,6 +1227,7 @@ html, body, #root {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 /* ── Form Elements ──────────────────────────────────────────── */

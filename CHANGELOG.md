@@ -1,3 +1,13 @@
+## [Unreleased]
+
+### Features
+
+* add MongoDB write support (insert, update, delete, replace, findOneAnd* and runCommand), plus inline edit/delete query generation in results table
+
+### Bug Fixes
+
+* fix titlebar modal crashes by hardening portal targets and render guards (Query History / Schema Visualizer)
+
 # [1.14.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.13.6...v1.14.0) (2026-05-28)
 
 

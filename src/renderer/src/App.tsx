@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Database, LayoutPanelLeft, Moon, Sun, Monitor, Info, Shield, Settings, Clock, Bug, GitBranch, Download, Terminal, Zap } from 'lucide-react'
 import { useAppStore } from './store'
 import { useIsLightTheme } from './hooks/useIsLightTheme'
@@ -10,6 +11,7 @@ import { ConnectionModal } from './components/ConnectionModal'
 import { SettingsModal } from './components/SettingsModal'
 import { QueryHistoryPanel } from './components/QueryHistory'
 import { SchemaVisualizer } from './components/SchemaVisualizer'
+import { RenderGuard } from './components/RenderGuard'
 import type { ConnectionConfig } from './types'
 import { formatServerVersion } from './utils/version'
 import { useTranslation } from './hooks/useTranslation'
@@ -186,6 +188,53 @@ export default function App(): React.JSX.Element {
     setEditingConnection(config ?? null)
     setShowConnectionModal(true)
   }
+
+  const portalTarget =
+    typeof document !== 'undefined'
+      ? document.body ?? document.getElementById('root')
+      : null
+  const renderPortal = (node: React.ReactNode): React.ReactNode => {
+    return portalTarget ? createPortal(node, portalTarget) : node
+  }
+
+  const renderModalRecoveryFallback = (panelName: string) => (error: Error | null) => (
+    <div className="modal-overlay">
+      <div className="modal-panel" style={{ maxWidth: 540 }}>
+        <div className="modal-header">
+          <span className="modal-title">{panelName} crashed</span>
+          <button className="icon-btn" onClick={() => { setShowHistory(false); setShowSchemaVisualizer(false) }}>✕</button>
+        </div>
+        <div className="modal-body">
+          <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+            This panel failed to render. Close and reopen it, or restart the app if needed.
+          </p>
+          {error?.message && (
+            <pre
+              style={{
+                margin: 0,
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--glass-border)',
+                background: 'rgba(0,0,0,0.18)',
+                color: 'var(--color-error)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 'var(--font-size-xs)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word'
+              }}
+            >
+              {error.message}
+            </pre>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={() => { setShowHistory(false); setShowSchemaVisualizer(false) }}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className={`app-root${isLightTheme ? ' theme-light' : THEME_CLASS[theme] ? ` ${THEME_CLASS[theme]}` : ''}`}>
@@ -534,50 +583,69 @@ export default function App(): React.JSX.Element {
 
       {/* Query history panel */}
       {showHistory && (
-        <QueryHistoryPanel onClose={() => setShowHistory(false)} />
+        <RenderGuard
+          fallback={renderModalRecoveryFallback('Query History')}
+          onError={(error) => {
+            console.error('Query History render failure:', error)
+            setStatus(`Query History failed: ${error.message}`, 'error')
+          }}
+        >
+          <QueryHistoryPanel onClose={() => setShowHistory(false)} />
+        </RenderGuard>
       )}
 
       {/* Schema visualizer */}
       {showSchemaVisualizer && (() => {
-        const activeTab = tabs.find((t) => t.id === activeTabId)
-        const conn = activeTab?.connectionId
-          ? connections.find((c) => c.id === activeTab.connectionId)
-          : connectedIds.size > 0
-            ? connections.find((c) => connectedIds.has(c.id))
-            : null
-        if (!conn || !connectedIds.has(conn.id)) {
-          return createPortal(
-            <div className="modal-overlay" onClick={() => setShowSchemaVisualizer(false)}>
-              <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
-                <div className="modal-header">
-                  <span className="modal-title">Schema Visualizer</span>
-                  <button className="icon-btn" onClick={() => setShowSchemaVisualizer(false)}>✕</button>
-                </div>
-                <div className="modal-body">
-                  <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                    No active database connection. Connect to a database first.
-                  </p>
-                </div>
-                <div className="modal-footer">
-                  <button className="btn btn-secondary" onClick={() => setShowSchemaVisualizer(false)}>Close</button>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )
-        }
         return (
-          <SchemaVisualizer
-            connectionId={conn.id}
-            connectionName={conn.name}
-            database={activeTab?.database ?? conn.database}
-            onClose={() => setShowSchemaVisualizer(false)}
-          />
+          <RenderGuard
+            fallback={renderModalRecoveryFallback('Schema Visualizer')}
+            onError={(error) => {
+              console.error('Schema Visualizer render failure:', error)
+              setStatus(`Schema Visualizer failed: ${error.message}`, 'error')
+            }}
+          >
+            {(() => {
+              const activeTab = tabs.find((t) => t.id === activeTabId)
+              const conn = activeTab?.connectionId
+                ? connections.find((c) => c.id === activeTab.connectionId)
+                : connectedIds.size > 0
+                  ? connections.find((c) => connectedIds.has(c.id))
+                  : null
+              if (!conn || !connectedIds.has(conn.id)) {
+                return renderPortal(
+                  <div className="modal-overlay" onClick={() => setShowSchemaVisualizer(false)}>
+                    <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+                      <div className="modal-header">
+                        <span className="modal-title">Schema Visualizer</span>
+                        <button className="icon-btn" onClick={() => setShowSchemaVisualizer(false)}>✕</button>
+                      </div>
+                      <div className="modal-body">
+                        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+                          No active database connection. Connect to a database first.
+                        </p>
+                      </div>
+                      <div className="modal-footer">
+                        <button className="btn btn-secondary" onClick={() => setShowSchemaVisualizer(false)}>Close</button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <SchemaVisualizer
+                  connectionId={conn.id}
+                  connectionName={conn.name}
+                  database={activeTab?.database ?? conn.database}
+                  onClose={() => setShowSchemaVisualizer(false)}
+                />
+              )
+            })()}
+          </RenderGuard>
         )
       })()}
 
       {/* Privacy modal */}
-      {showPrivacy && createPortal(
+      {showPrivacy && renderPortal(
         <div className="modal-overlay" onClick={() => setShowPrivacy(false)}>
           <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
             <div className="modal-header">
@@ -618,8 +686,7 @@ export default function App(): React.JSX.Element {
               <button className="btn btn-secondary" onClick={() => setShowPrivacy(false)}>Close</button>
             </div>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   )

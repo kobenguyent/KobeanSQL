@@ -74,6 +74,9 @@ export function buildSelectTableSql(
   schemaOrDatabase: string | undefined,
   limit: number
 ): string {
+  if (dbType === 'mongodb') {
+    return `db.${tableName}.find({}).limit(${limit})`
+  }
   return new SelectBuilder(dbType).all().from(tableName, schemaOrDatabase).limit(limit).build()
 }
 

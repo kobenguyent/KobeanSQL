@@ -8,6 +8,28 @@ interface Props {
   onClose: () => void
 }
 
+function asSafeNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'bigint') return Number(value)
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function normalizeHistoryEntry(entry: unknown, index: number): QueryHistoryEntry {
+  const record = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>
+  const now = Date.now()
+  return {
+    id: asSafeString(record.id) || `history-ui-${now}-${index}`,
+    sql: asSafeString(record.sql),
+    connectionId: record.connectionId == null ? null : asSafeString(record.connectionId),
+    connectionName: asSafeString(record.connectionName) || 'Unknown connection',
+    timestamp: asSafeNumber(record.timestamp, now),
+    duration: asSafeNumber(record.duration, 0),
+    rowCount: asSafeNumber(record.rowCount, 0),
+    error: asSafeString(record.error) || undefined
+  }
+}
+
 function formatTime(ts: number): string {
   const d = new Date(ts)
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -30,24 +52,29 @@ function truncateSql(sql: string, maxLen = SQL_PREVIEW_LEN): string {
   return single.length > maxLen ? single.slice(0, maxLen) + '…' : single
 }
 
+function asSafeString(value: unknown): string {
+  return typeof value === 'string' ? value : String(value ?? '')
+}
+
 export function QueryHistoryPanel({ onClose }: Props): React.JSX.Element {
   const { queryHistory, clearHistory, openHistoryEntry } = useAppStore()
   const [filter, setFilter] = useState('')
   const [selectedEntry, setSelectedEntry] = useState<QueryHistoryEntry | null>(null)
+  const entries = queryHistory.map((entry, index) => normalizeHistoryEntry(entry, index))
 
   const filtered = filter.trim()
-    ? queryHistory.filter((e) =>
-        e.sql.toLowerCase().includes(filter.toLowerCase()) ||
-        e.connectionName.toLowerCase().includes(filter.toLowerCase())
+    ? entries.filter((e) =>
+        asSafeString(e.sql).toLowerCase().includes(filter.toLowerCase()) ||
+        asSafeString(e.connectionName).toLowerCase().includes(filter.toLowerCase())
       )
-    : queryHistory
+    : entries
 
   const handleOpen = (entry: QueryHistoryEntry) => {
     openHistoryEntry(entry)
     onClose()
   }
 
-  return createPortal(
+  const content = (
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-panel"
@@ -57,7 +84,7 @@ export function QueryHistoryPanel({ onClose }: Props): React.JSX.Element {
         <div className="modal-header">
           <span className="modal-title">Query History</span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            {queryHistory.length > 0 && (
+            {entries.length > 0 && (
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={clearHistory}
@@ -83,7 +110,7 @@ export function QueryHistoryPanel({ onClose }: Props): React.JSX.Element {
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
           {filtered.length === 0 ? (
             <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
-              {queryHistory.length === 0 ? 'No queries executed yet' : 'No matches found'}
+              {entries.length === 0 ? 'No queries executed yet' : 'No matches found'}
             </div>
           ) : (
             filtered.map((entry) => (
@@ -116,7 +143,7 @@ export function QueryHistoryPanel({ onClose }: Props): React.JSX.Element {
                     {formatDate(entry.timestamp)} {formatTime(entry.timestamp)}
                   </span>
                   <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--accent)', marginLeft: 'auto' }}>
-                    {entry.connectionName}
+                    {asSafeString(entry.connectionName)}
                   </span>
                   {!entry.error && (
                     <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>
@@ -134,7 +161,7 @@ export function QueryHistoryPanel({ onClose }: Props): React.JSX.Element {
                     textOverflow: 'ellipsis'
                   }}
                 >
-                  {truncateSql(entry.sql)}
+                  {truncateSql(asSafeString(entry.sql))}
                 </div>
                 {selectedEntry?.id === entry.id && (
                   <div style={{ marginTop: 8 }}>
@@ -154,7 +181,7 @@ export function QueryHistoryPanel({ onClose }: Props): React.JSX.Element {
                         margin: 0
                       }}
                     >
-                      {entry.sql}
+                      {asSafeString(entry.sql)}
                     </pre>
                     {entry.error && (
                       <div style={{ marginTop: 6, color: 'var(--color-error)', fontSize: 'var(--font-size-xs)' }}>
@@ -187,4 +214,11 @@ export function QueryHistoryPanel({ onClose }: Props): React.JSX.Element {
       </div>
     </div>
   )
+
+  const portalTarget =
+    typeof document !== 'undefined'
+      ? document.body ?? document.getElementById('root')
+      : null
+
+  return portalTarget ? createPortal(content, portalTarget) : content
 }

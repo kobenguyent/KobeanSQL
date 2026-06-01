@@ -6,7 +6,7 @@
   <title>KobeanSQL – Modern SQL Client</title>
   <meta name="description" content="KobeanSQL is a beautiful, modern SQL database client for desktop built with Electron, React, and an Apple-inspired glassmorphism UI." />
   <meta property="og:title" content="KobeanSQL – Modern SQL Client" />
-  <meta property="og:description" content="Connect to MySQL, PostgreSQL, SQLite, and SQL Server with a beautiful glassmorphism interface." />
+  <meta property="og:description" content="Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, and MongoDB with a beautiful glassmorphism interface." />
   <meta property="og:type" content="website" />
   <link id="site-favicon" rel="icon" type="image/svg+xml" href="assets/kobeansql-logo-mark-light.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -561,7 +561,7 @@
       <h1>Beautiful SQL<br>for every database</h1>
       <p>
         KobeanSQL is a modern desktop SQL client with an Apple-inspired glassmorphism interface.
-        Connect to MySQL, MariaDB, PostgreSQL, SQLite, and SQL Server.
+        Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, and MongoDB.
         Visualize schema relationships and use local-only AI workflows.
       </p>
       <div class="hero-actions">
@@ -612,7 +612,7 @@
         <div class="feature-card">
           <span class="feature-icon">🗄️</span>
           <h3>Multi-Database Support</h3>
-          <p>Connect to MySQL, MariaDB, PostgreSQL, SQLite, and SQL Server from the same app with native drivers.</p>
+          <p>Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, and MongoDB from the same app with native drivers.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🗂️</span>
@@ -635,6 +635,11 @@
           <p>Sortable columns, global filter, per-column filtering, CSV export, and row count + query duration in the status bar.</p>
         </div>
         <div class="feature-card">
+          <span class="feature-icon">🍃</span>
+          <h3>MongoDB Read + Write</h3>
+          <p>Run MongoDB <code>find</code> / <code>aggregate</code> queries and write operations such as <code>insertOne</code>, <code>updateOne</code>, <code>deleteMany</code>, and <code>runCommand</code>.</p>
+        </div>
+        <div class="feature-card">
           <span class="feature-icon">💾</span>
           <h3>Saved Queries</h3>
           <p>Save, name, and re-open any query at any time. All queries are stored locally — no cloud account needed.</p>
@@ -648,6 +653,11 @@
           <span class="feature-icon">🕘</span>
           <h3>Query History</h3>
           <p>Review previously executed statements in the in-app history panel and bring queries back into your workflow faster.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🛡️</span>
+          <h3>Resilient Panels</h3>
+          <p>Query History and Schema Visualizer use guarded portal rendering to prevent renderer crashes when modal targets are unavailable.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🔄</span>
@@ -716,6 +726,12 @@
           <h3>SQL Server</h3>
           <p>mssql driver</p>
           <span class="port">:1433</span>
+        </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#10b981,#059669)">MG</div>
+          <h3>MongoDB</h3>
+          <p>mongodb driver</p>
+          <span class="port">:27017</span>
         </div>
       </div>
     </section>
@@ -818,7 +834,7 @@
           <thead><tr><th>Field</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>Name</code></td><td>Human-readable label (e.g. <code>prod-postgres-readonly</code>)</td></tr>
-            <tr><td><code>Type</code></td><td>Database engine: MySQL / MariaDB / PostgreSQL / SQLite / SQL Server</td></tr>
+            <tr><td><code>Type</code></td><td>Database engine: MySQL / MariaDB / PostgreSQL / SQLite / SQL Server / MongoDB</td></tr>
             <tr><td><code>Host</code></td><td>Hostname or IP address</td></tr>
             <tr><td><code>Port</code></td><td>Default ports are pre-filled per engine</td></tr>
             <tr><td><code>Database</code></td><td>Default database / schema</td></tr>
@@ -932,7 +948,7 @@
             <tr><td>SQL editor</td><td>CodeMirror 6 (<code>@uiw/react-codemirror</code>)</td><td>6</td></tr>
             <tr><td>Data grid</td><td><code>@tanstack/react-table</code></td><td>8</td></tr>
             <tr><td>Schema diagram</td><td><code>@xyflow/react</code> + <code>@dagrejs/dagre</code></td><td>12 / 3</td></tr>
-            <tr><td>DB drivers</td><td>mysql2, pg, better-sqlite3, mssql</td><td>—</td></tr>
+            <tr><td>DB drivers</td><td>mysql2, pg, better-sqlite3, mssql, mongodb</td><td>—</td></tr>
             <tr><td>Tests</td><td>Vitest + Playwright</td><td>1 / 1</td></tr>
             <tr><td>Packaging</td><td>electron-builder</td><td>24</td></tr>
           </tbody>
@@ -947,7 +963,7 @@
         <div><span class="arg">│   ├── store.ts</span><span class="comment">      # JSON persistence + safeStorage</span></div>
         <div><span class="arg">│   ├── ipc/</span><span class="comment">          # All ipcMain.handle registrations</span></div>
         <div><span class="arg">│   ├── ai/</span><span class="comment">           # Ollama + OpenAI-compatible service</span></div>
-        <div><span class="arg">│   └── db/</span><span class="comment">           # Adapters: MySQL, PostgreSQL, SQLite, MSSQL</span></div>
+        <div><span class="arg">│   └── db/</span><span class="comment">           # Adapters: MySQL, PostgreSQL, SQLite, MSSQL, MongoDB</span></div>
         <div><span class="arg">├── preload/</span><span class="comment">      # contextBridge → window.db typed API</span></div>
         <div><span class="arg">└── renderer/</span><span class="comment">     # React app (sandboxed)</span></div>
         <div><span class="arg">    └── src/</span></div>
@@ -1281,6 +1297,7 @@
         <div class="tech-pill">pg<span>PostgreSQL</span></div>
         <div class="tech-pill">better-sqlite3<span>SQLite</span></div>
         <div class="tech-pill">mssql<span>SQL Server</span></div>
+        <div class="tech-pill">mongodb<span>MongoDB</span></div>
         <div class="tech-pill">Vitest<span>Tests</span></div>
         <div class="tech-pill">semantic-release<span>CI / releases</span></div>
       </div>

@@ -8,7 +8,7 @@
 
 # KobeanSQL
 
-> A cross-platform desktop SQL client that lets developers query, explore, and manage MySQL, MariaDB, PostgreSQL, SQLite, and SQL Server databases from a single, beautiful native app — no browser, no cloud, no data leaving your machine.
+> A cross-platform desktop SQL client that lets developers query, explore, and manage MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, and MongoDB databases from a single, beautiful native app — no browser, no cloud, no data leaving your machine.
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/kobenguyent/KobeanSQL/ci.yml?branch=main&style=flat-square&label=build)](https://github.com/kobenguyent/KobeanSQL/actions)
 [![Version](https://img.shields.io/github/package-json/v/kobenguyent/KobeanSQL?style=flat-square&color=7b7bea)](https://github.com/kobenguyent/KobeanSQL/releases/latest)
@@ -36,7 +36,7 @@
 ## ✨ Key Features
 
 ### Connection Management
-- **Multi-database support** — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server (MSSQL) from a single UI
+- **Multi-database support** — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server (MSSQL), and MongoDB from a single UI
 - **Connection tester** — validate host/port/credentials before saving, with a clear success/error banner
 - **Persistent connections** — saved across app restarts; stored in your OS user-data directory
 - **Connection import / export** — portable JSON backup and restore with validation, duplicate detection, and selective password inclusion
@@ -52,6 +52,7 @@
 ### Data Visualization & Results
 - **Sortable, filterable results grid** — powered by `@tanstack/react-table` with global full-text filter and column-level sort
 - **Inline cell editing (PK-aware)** — edit table cells with generated `UPDATE` SQL and a confirmation modal before execution
+- **MongoDB edit/write workflow** — run `find` / `aggregate` plus write operations (`insertOne`, `updateOne`, `deleteMany`, `findOneAndUpdate`, `runCommand`, etc.) and inline MongoDB row edits/deletes from the results view
 - **CSV export** — export the current result set to a `.csv` file in one click
 - **Row count + query duration** — shown in the results panel footer after every execution
 - **Database Schema Visualizer** — interactive entity-relationship diagram (built with `@xyflow/react` and `@dagrejs/dagre`) that auto-lays out tables and foreign-key relationships for the selected database
@@ -72,6 +73,7 @@
 - **Offline-first** — all connections are direct TCP/IP; no proxy server required
 - **Saved queries library** — store frequently used SQL snippets locally, categorized and searchable
 - **Query history panel** — filter and reopen recent successful/failed statements with timing and row-count metadata
+- **Resilient modal rendering** — Query History and Schema Visualizer now use guarded portal rendering to avoid renderer crashes from missing portal targets
 - **Configurable query limit** — prevent runaway full-table scans by setting a global default row limit (1–10,000)
 
 ---
@@ -85,6 +87,7 @@
 | PostgreSQL   | `pg`              | 5432         |
 | SQLite       | `better-sqlite3`  | — (file)     |
 | SQL Server   | `mssql`           | 1433         |
+| MongoDB      | `mongodb`         | 27017        |
 
 ---
 
@@ -102,15 +105,15 @@ KobeanSQL strictly follows Electron's two-process architecture with `contextIsol
 │  │  ConnectionManager  │   │  store.ts                │ │
 │  │  (pooling, routing) │   │  (JSON persistence +     │ │
 │  │                     │   │   safeStorage encrypt)   │ │
-│  │  ┌──────────────┐   │   └──────────────────────────┘ │
-│  │  │ MySQLAdapter │   │   ┌──────────────────────────┐ │
-│  │  │ PGAdapter    │   │   │  AI Service              │ │
-│  │  │ SQLiteAdapter│   │   │  (Ollama / OpenAI-compat)│ │
-│  │  │ MSSQLAdapter │   │   └──────────────────────────┘ │
-│  │  └──────────────┘   │   ┌──────────────────────────┐ │
-│  └─────────────────────┘   │  electron-log            │ │
-│                             │  (file transport)        │ │
-│  IPC handlers registered    └──────────────────────────┘ │
+│  │  ┌────────────────┐    │   └──────────────────────────┘ │
+│  │  │ MySQLAdapter   │    │   ┌──────────────────────────┐ │
+│  │  │ PGAdapter      │    │   │  AI Service              │ │
+│  │  │ SQLiteAdapter  │    │   │  (Ollama / OpenAI-compat)│ │
+│  │  │ MSSQLAdapter   │    │   └──────────────────────────┘ │
+│  │  │ MongoDBAdapter │    │   ┌──────────────────────────┐ │
+│  │  └────────────────┘    │   │  electron-log            │ │
+│  └─────────────────────┘   │   │  (file transport)        │ │
+│  IPC handlers registered    │   └──────────────────────────┘ │
 │  via registerIpcHandlers()                               │
 └───────────────────────┬──────────────────────────────────┘
                         │  IPC (ipcMain / ipcRenderer)
@@ -160,7 +163,7 @@ KobeanSQL strictly follows Electron's two-process architecture with `contextIsol
 | Data grid      | `@tanstack/react-table`                 | 8       |
 | Schema diagram | `@xyflow/react` + `@dagrejs/dagre`      | 12 / 3  |
 | Icons          | `lucide-react`                          | 0.344   |
-| DB drivers     | `mysql2`, `pg`, `better-sqlite3`, `mssql`| —      |
+| DB drivers     | `mysql2`, `pg`, `better-sqlite3`, `mssql`, `mongodb`| —      |
 | Logging        | `electron-log`                          | 5       |
 | Tests          | Vitest + Playwright                     | 1 / 1   |
 | Packaging      | electron-builder                        | 24      |
@@ -270,7 +273,7 @@ Fill in the fields:
 | Field        | Description                                                                 |
 |--------------|-----------------------------------------------------------------------------|
 | Name         | A human-readable label for the connection (e.g., `prod-postgres-readonly`)  |
-| Type         | Database engine: MySQL / MariaDB / PostgreSQL / SQLite / SQL Server         |
+| Type         | Database engine: MySQL / MariaDB / PostgreSQL / SQLite / SQL Server / MongoDB |
 | Host         | Hostname or IP address (`127.0.0.1`, `db.example.com`)                      |
 | Port         | Default ports are pre-filled per engine                                     |
 | Database     | Default database / schema to connect to                                     |
