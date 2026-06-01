@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.14.0...v1.15.0) (2026-06-01)
+
+
+### Features
+
+* add MongoDB read-only connections + fix Settings modal crash ([#52](https://github.com/kobenguyent/KobeanSQL/issues/52)) ([50872d1](https://github.com/kobenguyent/KobeanSQL/commit/50872d1e461a043b89d607f09964abc4abe9f2cd))
+
 ## [Unreleased]
 
 ### Features
