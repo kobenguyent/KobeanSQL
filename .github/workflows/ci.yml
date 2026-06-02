@@ -87,34 +87,3 @@ jobs:
           # Allow ad-hoc signing (identity: "-") in macOS CI builds.
           # CSC_FOR_PULL_REQUEST only affects signing; no certificate secrets are exposed.
           CSC_FOR_PULL_REQUEST: ${{ matrix.os == 'macos-latest' && 'true' || '' }}
-
-      - name: Upload artifacts (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: kobeansql-linux
-          path: |
-            dist/*.AppImage
-            dist/*.deb
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Upload artifacts (macOS)
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: kobeansql-mac
-          path: |
-            dist/*.dmg
-            dist/*.zip
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Upload artifacts (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: kobeansql-windows
-          path: dist/*.exe
-          if-no-files-found: warn
-          retention-days: 30
