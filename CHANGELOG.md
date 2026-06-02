@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.17.0...v1.18.0) (2026-06-02)
+
+
+### Features
+
+* Metric Dashboard — IPC bridge, drag-and-drop grid, Recharts widgets, SQL query widgets ([#56](https://github.com/kobenguyent/KobeanSQL/issues/56)) ([d9c785d](https://github.com/kobenguyent/KobeanSQL/commit/d9c785db06359f386d5e7092b2a3891245ace9f3))
+
 # [1.17.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.16.0...v1.17.0) (2026-06-02)
 
 
