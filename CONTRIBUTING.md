@@ -51,3 +51,19 @@ In the repository settings:
 - The default commit message for squash merges must be set to **Pull request title**.
 
 The CI workflow `.github/workflows/pr-title.yml` automatically validates that every PR title is a valid conventional commit before it can be merged.
+
+## Documentation Updates
+
+If your PR changes user-facing behavior, supported databases, setup steps, or screenshots, update the canonical docs surfaces together:
+
+- `README.md`
+- `docs/index.html`
+- `CHANGELOG.md` (when the change is release-notable)
+
+Before opening or merging the PR, run:
+
+```bash
+npm run docs:sync:check
+```
+
+This verifies that key product topics stay aligned between `README.md` and `docs/index.html`.

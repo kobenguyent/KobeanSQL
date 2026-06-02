@@ -1,5 +1,21 @@
 # Development
 
+## Documentation Sync
+
+User-facing docs are maintained across three canonical surfaces:
+
+- `README.md`
+- `docs/index.html`
+- `CHANGELOG.md`
+
+If you change visible product behavior, supported databases, setup steps, or feature coverage, update the relevant docs in the same PR and run:
+
+```bash
+npm run docs:sync:check
+```
+
+The sync check verifies that `README.md` and `docs/index.html` still mention the core product topics we expect to keep aligned.
+
 ## Database Schema Visualizer E2E Test System
 
 ### Architecture flow
@@ -23,8 +39,7 @@ Electron Main (ConnectionManager + SQLite adapter)
 ### E2E environment setup
 
 ```bash
-npm install --ignore-scripts
-npm run rebuild:sqlite
+npm run install:dev
 npx playwright install
 ```
 
