@@ -144,6 +144,21 @@ declare global {
         connectionId: string; databaseName: string; schemaJson: string; cachedAt: number
       } | null>
       clearSchemaCache(connectionId?: string): Promise<{ success: boolean }>
+
+      // Metric data
+      getMetricData(metricId: string, params?: { points?: number }): Promise<{
+        metricId: string
+        data: Array<{ timestamp: number; value: number }>
+      }>
+
+      // Dashboard layouts
+      getDashboardLayouts(): Promise<Array<{
+        id: string; name: string; widgetsJson: string; updatedAt: number
+      }>>
+      saveDashboardLayout(layout: {
+        id: string; name: string; widgetsJson: string; updatedAt: number
+      }): Promise<{ success: boolean }>
+      deleteDashboardLayout(id: string): Promise<{ success: boolean }>
     }
   }
 }

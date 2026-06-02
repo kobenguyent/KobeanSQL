@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Database, LayoutPanelLeft, Moon, Sun, Monitor, Info, Shield, Settings, Clock, Bug, GitBranch, Download, Terminal, Zap, Lightbulb } from 'lucide-react'
+import { Database, LayoutPanelLeft, Moon, Sun, Monitor, Info, Shield, Settings, Clock, Bug, GitBranch, Download, Terminal, Zap, Lightbulb, BarChart2 } from 'lucide-react'
 import { useAppStore } from './store'
 import { useIsLightTheme } from './hooks/useIsLightTheme'
 import { Sidebar } from './components/Sidebar'
@@ -12,6 +12,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { TipsAndTricksModal } from './components/TipsAndTricks'
 import { QueryHistoryPanel } from './components/QueryHistory'
 import { SchemaVisualizer } from './components/SchemaVisualizer'
+import { DashboardBuilder } from './components/MetricDashboard'
 import { RenderGuard } from './components/RenderGuard'
 import type { ConnectionConfig } from './types'
 import { formatServerVersion } from './utils/version'
@@ -73,6 +74,7 @@ export default function App(): React.JSX.Element {
   const [showHistory, setShowHistory] = useState(false)
   const [showSchemaVisualizer, setShowSchemaVisualizer] = useState(false)
   const [showTips, setShowTips] = useState(false)
+  const [showDashboard, setShowDashboard] = useState(false)
   const [closedUpdateVersion, setClosedUpdateVersion] = useState<string | null>(null)
 
   // Resize state
@@ -253,6 +255,13 @@ export default function App(): React.JSX.Element {
             data-tooltip={t('app.queryHistory')}
           >
             <Clock size={15} />
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => setShowDashboard(true)}
+            data-tooltip="Metric Dashboard"
+          >
+            <BarChart2 size={15} />
           </button>
           <button
             className="icon-btn"
@@ -657,6 +666,19 @@ export default function App(): React.JSX.Element {
           </RenderGuard>
         )
       })()}
+
+      {/* Metric Dashboard */}
+      {showDashboard && (
+        <RenderGuard
+          fallback={renderModalRecoveryFallback('Metric Dashboard')}
+          onError={(error) => {
+            console.error('Metric Dashboard render failure:', error)
+            setStatus(`Metric Dashboard failed: ${error.message}`, 'error')
+          }}
+        >
+          <DashboardBuilder onClose={() => setShowDashboard(false)} />
+        </RenderGuard>
+      )}
 
       {/* Privacy modal */}
       {showPrivacy && renderPortal(

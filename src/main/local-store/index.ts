@@ -27,6 +27,13 @@ import {MigrationManager, MigrationStep} from "../migration";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface DashboardLayoutRecord {
+  id: string
+  name: string
+  widgetsJson: string
+  updatedAt: number
+}
+
 export interface ConnectionLogEntry {
   id: string
   connectionId: string
@@ -226,6 +233,19 @@ export class LocalStore {
                 appLogger.error('Failed to migrate saved queries from JSON', { error: (err as Error).message })
               }
             }
+          }
+        },
+        {
+          version: 3,
+          up: () => {
+            execSql(this.db!, `
+              CREATE TABLE IF NOT EXISTS dashboard_layouts (
+                id           TEXT    PRIMARY KEY,
+                name         TEXT    NOT NULL,
+                widgets_json TEXT    NOT NULL,
+                updated_at   INTEGER NOT NULL
+              );
+            `)
           }
         }
       ]
@@ -468,6 +488,46 @@ export class LocalStore {
       appLogger.error('LocalStore.deleteSavedQuery failed', { error: (err as Error).message })
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Dashboard layouts
+  // -------------------------------------------------------------------------
+
+  getDashboardLayouts(): DashboardLayoutRecord[] {
+    if (!this.db) return []
+    try {
+      const rows = this.db
+        .prepare('SELECT id, name, widgets_json, updated_at FROM dashboard_layouts ORDER BY updated_at DESC')
+        .all()
+      return rows.map(rowToDashboardLayout)
+    } catch (err) {
+      appLogger.error('LocalStore.getDashboardLayouts failed', { error: (err as Error).message })
+      return []
+    }
+  }
+
+  saveDashboardLayout(layout: DashboardLayoutRecord): void {
+    if (!this.db) return
+    try {
+      this.db
+        .prepare(
+          `INSERT OR REPLACE INTO dashboard_layouts (id, name, widgets_json, updated_at)
+           VALUES (?, ?, ?, ?)`
+        )
+        .run(layout.id, layout.name, layout.widgetsJson, layout.updatedAt)
+    } catch (err) {
+      appLogger.error('LocalStore.saveDashboardLayout failed', { error: (err as Error).message })
+    }
+  }
+
+  deleteDashboardLayout(id: string): void {
+    if (!this.db) return
+    try {
+      this.db.prepare('DELETE FROM dashboard_layouts WHERE id = ?').run(id)
+    } catch (err) {
+      appLogger.error('LocalStore.deleteDashboardLayout failed', { error: (err as Error).message })
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +564,15 @@ function rowToSchemaCacheEntry(row: SqliteRow): SchemaCacheEntry {
     databaseName: String(row['database_name'] ?? ''),
     schemaJson: String(row['schema_json'] ?? '{}'),
     cachedAt: Number(row['cached_at'] ?? 0)
+  }
+}
+
+function rowToDashboardLayout(row: SqliteRow): DashboardLayoutRecord {
+  return {
+    id: String(row['id'] ?? ''),
+    name: String(row['name'] ?? ''),
+    widgetsJson: String(row['widgets_json'] ?? '[]'),
+    updatedAt: Number(row['updated_at'] ?? 0)
   }
 }
 
