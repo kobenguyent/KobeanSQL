@@ -1,3 +1,10 @@
+# [1.17.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.16.0...v1.17.0) (2026-06-02)
+
+
+### Features
+
+* add SQL Tips & Tricks modal ([#55](https://github.com/kobenguyent/KobeanSQL/issues/55)) ([eeb4428](https://github.com/kobenguyent/KobeanSQL/commit/eeb4428b174d9ebf6f2b25b66a4a9d3e0e1ad312))
+
 # [1.16.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.15.0...v1.16.0) (2026-06-01)
 
 
