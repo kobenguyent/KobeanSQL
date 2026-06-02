@@ -66,7 +66,7 @@ const GRID_COLS = 12
 const GRID_ROW_HEIGHT = 40
 
 function genId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2)
+  return crypto.randomUUID()
 }
 
 function formatTimestamp(ts: number): string {
@@ -301,6 +301,9 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [gridWidth, setGridWidth] = useState(900)
+  // Keep a stable ref to the current widget list for use inside the polling interval
+  const widgetsRef = useRef(widgets)
+  useEffect(() => { widgetsRef.current = widgets }, [widgets])
 
   // ── Resize observer for grid container ──────────────────────────────────
   useEffect(() => {
@@ -317,7 +320,7 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
   useEffect(() => {
     window.db.getDashboardLayouts().then((layouts) => {
       setSavedLayouts(layouts)
-    }).catch(() => {/* non-fatal */})
+    }).catch((err) => { console.error('Failed to load dashboard layouts:', err) })
   }, [])
 
   // ── Fetch metric data for all widgets ────────────────────────────────────
@@ -329,7 +332,9 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
         try {
           const result = await window.db.getMetricData(metricId, { points: 20 })
           setMetricData((prev) => ({ ...prev, [metricId]: result.data }))
-        } catch {/* non-fatal */} finally {
+        } catch (err) {
+          console.error(`Failed to fetch metric data for ${metricId}:`, err)
+        } finally {
           setLoadingMetrics((prev) => ({ ...prev, [metricId]: false }))
         }
       })
@@ -338,8 +343,14 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
 
   useEffect(() => {
     fetchAllMetrics(widgets)
-    const timer = window.setInterval(() => fetchAllMetrics(widgets), 60_000)
+    const timer = window.setInterval(() => fetchAllMetrics(widgetsRef.current), 60_000)
     return () => window.clearInterval(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchAllMetrics])
+
+  // Re-fetch when widget list changes (e.g. after adding/removing widgets)
+  useEffect(() => {
+    fetchAllMetrics(widgets)
   }, [widgets, fetchAllMetrics])
 
   // ── Grid layout change ───────────────────────────────────────────────────
@@ -370,7 +381,7 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
     if (!metricData[metricId]) {
       window.db.getMetricData(metricId, { points: 20 })
         .then((result) => setMetricData((prev) => ({ ...prev, [metricId]: result.data })))
-        .catch(() => {/* non-fatal */})
+        .catch((err) => { console.error(`Failed to fetch metric data for ${metricId}:`, err) })
     }
   }
 
@@ -423,7 +434,7 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
 
   // ── Delete a saved layout ────────────────────────────────────────────────
   const handleDeleteLayout = async (id: string) => {
-    await window.db.deleteDashboardLayout(id).catch(() => {/* non-fatal */})
+    await window.db.deleteDashboardLayout(id).catch((err: unknown) => { console.error('Failed to delete dashboard layout:', err) })
     setSavedLayouts((prev) => prev.filter((l) => l.id !== id))
     if (activeLayoutId === id) setActiveLayoutId(null)
   }

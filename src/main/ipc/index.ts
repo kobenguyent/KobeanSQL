@@ -484,16 +484,20 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
   // Metrics data (mocked for now; real adapters can replace the switch cases)
   // -------------------------------------------------------------------------
 
+  const MIN_METRIC_POINTS = 1
+  const MAX_METRIC_POINTS = 200
+  const DEFAULT_METRIC_POINTS = 20
+  const METRIC_INTERVAL_MS = 60_000 // 1-minute buckets
+
   handleWithLogging(
     'metrics:get-data',
     async (_event: IpcMainInvokeEvent, metricId: string, params?: { points?: number }) => {
-      const points = Math.max(1, Math.min(200, params?.points ?? 20))
+      const points = Math.max(MIN_METRIC_POINTS, Math.min(MAX_METRIC_POINTS, params?.points ?? DEFAULT_METRIC_POINTS))
       const now = Date.now()
-      const intervalMs = 60_000 // 1-minute buckets
 
       const data: Array<{ timestamp: number; value: number }> = []
       for (let i = points - 1; i >= 0; i--) {
-        const timestamp = now - i * intervalMs
+        const timestamp = now - i * METRIC_INTERVAL_MS
         let value: number
         switch (metricId) {
           case 'active_connections':

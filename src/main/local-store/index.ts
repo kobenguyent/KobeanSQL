@@ -212,19 +212,6 @@ export class LocalStore {
         {
           version: 2,
           up: async () => {
-            execSql(this.db!, `
-              CREATE TABLE IF NOT EXISTS dashboard_layouts (
-                id          TEXT    PRIMARY KEY,
-                name        TEXT    NOT NULL,
-                widgets_json TEXT   NOT NULL,
-                updated_at  INTEGER NOT NULL
-              );
-            `)
-          }
-        },
-        {
-          version: 3,
-          up: async () => {
             const jsonPath = path.join(userDataDir, 'saved-queries.json')
             if (fs.existsSync(jsonPath)) {
               try {
@@ -246,6 +233,19 @@ export class LocalStore {
                 appLogger.error('Failed to migrate saved queries from JSON', { error: (err as Error).message })
               }
             }
+          }
+        },
+        {
+          version: 3,
+          up: () => {
+            execSql(this.db!, `
+              CREATE TABLE IF NOT EXISTS dashboard_layouts (
+                id           TEXT    PRIMARY KEY,
+                name         TEXT    NOT NULL,
+                widgets_json TEXT    NOT NULL,
+                updated_at   INTEGER NOT NULL
+              );
+            `)
           }
         }
       ]
