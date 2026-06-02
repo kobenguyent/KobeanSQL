@@ -136,6 +136,11 @@ const vi = {
   'lang.ja': '日本語',
   'lang.vi': 'Tiếng Việt',
 
+  // ── Tips & Tricks ─────────────────────────────────────────────
+  'tips.title': 'Mẹo và Thủ thuật SQL',
+  'tips.footer': 'Di chuột qua bảng hoặc cột trong thanh bên để xem lược đồ của nó.',
+  'app.tipsAndTricks': 'Mẹo và Thủ thuật SQL',
+
   // ── Update download ───────────────────────────────────────────
   'updates.downloadUpdate': 'Tải xuống bản cập nhật',
   'updates.viewRelease': 'Xem bản phát hành',

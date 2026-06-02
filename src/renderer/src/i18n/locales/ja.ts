@@ -136,6 +136,11 @@ const ja = {
   'lang.ja': '日本語',
   'lang.vi': 'Tiếng Việt',
 
+  // ── Tips & Tricks ─────────────────────────────────────────────
+  'tips.title': 'SQLのヒントとコツ',
+  'tips.footer': 'サイドバーのテーブルまたはカラムにカーソルを合わせると、スキーマを確認できます。',
+  'app.tipsAndTricks': 'SQLのヒントとコツ',
+
   // ── Update download ───────────────────────────────────────────
   'updates.downloadUpdate': 'アップデートをダウンロード',
   'updates.viewRelease': 'リリースを見る',

@@ -136,6 +136,11 @@ const es = {
   'lang.ja': '日本語',
   'lang.vi': 'Tiếng Việt',
 
+  // ── Tips & Tricks ─────────────────────────────────────────────
+  'tips.title': 'Consejos y Trucos de SQL',
+  'tips.footer': 'Pase el cursor sobre una tabla o columna en la barra lateral para inspeccionar su esquema.',
+  'app.tipsAndTricks': 'Consejos y Trucos de SQL',
+
   // ── Update download ───────────────────────────────────────────
   'updates.downloadUpdate': 'Descargar actualización',
   'updates.viewRelease': 'Ver versión',
