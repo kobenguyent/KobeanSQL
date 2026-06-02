@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>KobeanSQL – Modern SQL Client</title>
-  <meta name="description" content="KobeanSQL is a beautiful, modern SQL database client for desktop built with Electron, React, and an Apple-inspired glassmorphism UI." />
+  <meta name="description" content="KobeanSQL is a modern desktop SQL client with multi-database support, schema visualization, metric dashboards, and local-only AI workflows." />
   <meta property="og:title" content="KobeanSQL – Modern SQL Client" />
   <meta property="og:description" content="Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle with a beautiful glassmorphism interface." />
   <meta property="og:type" content="website" />
@@ -568,7 +568,7 @@
       <p>
         KobeanSQL is a modern desktop SQL client with an Apple-inspired glassmorphism interface.
         Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle.
-        Visualize schema relationships and use local-only AI workflows.
+        Visualize schema relationships, build local metric dashboards, and use local-only AI workflows.
       </p>
       <div class="hero-actions">
         <a href="https://github.com/kobenguyent/KobeanSQL/releases/latest" class="btn-primary" target="_blank" rel="noopener">
@@ -638,7 +638,12 @@
         <div class="feature-card">
           <span class="feature-icon">📊</span>
           <h3>Results Grid</h3>
-          <p>Sortable columns, global filter, per-column filtering, CSV export, and row count + query duration in the status bar.</p>
+          <p>Sortable columns, full-text filtering, inline row actions, CSV export, and row count + query duration after every query.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">📈</span>
+          <h3>Metric Dashboard</h3>
+          <p>Build persistent drag-and-drop dashboards with stat, line, bar, and pie widgets backed by live SQL result sets.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🍃</span>
@@ -661,6 +666,11 @@
           <p>Review previously executed statements in the in-app history panel and bring queries back into your workflow faster.</p>
         </div>
         <div class="feature-card">
+          <span class="feature-icon">💡</span>
+          <h3>SQL Tips &amp; Tricks</h3>
+          <p>Open built-in examples for SELECTs, JOINs, aggregation, indexing, and safe data modification patterns while you work.</p>
+        </div>
+        <div class="feature-card">
           <span class="feature-icon">🛡️</span>
           <h3>Resilient Panels</h3>
           <p>Query History and Schema Visualizer use guarded portal rendering to prevent renderer crashes when modal targets are unavailable.</p>
@@ -676,9 +686,14 @@
           <p>Configure global query row limits in Settings so table browsing stays fast and safe for large datasets.</p>
         </div>
         <div class="feature-card">
+          <span class="feature-icon">🗃️</span>
+          <h3>SQLite-Backed Local Storage</h3>
+          <p>Query history, saved queries, schema cache, connection logs, and dashboard layouts persist locally in a dedicated SQLite store.</p>
+        </div>
+        <div class="feature-card">
           <span class="feature-icon">🤖</span>
           <h3>Local-Only AI Assistant</h3>
-          <p>Generate, explain, and optimize SQL with local providers such as Ollama and OpenAI-compatible local servers - no cloud AI calls.</p>
+          <p>Generate, explain, and optimize SQL with local providers such as Ollama and OpenAI-compatible local servers. No cloud AI calls.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🔐</span>
@@ -807,11 +822,8 @@
         <div><span class="prompt">$ </span><span class="cmd">git clone</span> <span class="arg">https://github.com/kobenguyent/KobeanSQL.git</span></div>
         <div><span class="prompt">$ </span><span class="cmd">cd</span> <span class="arg">KobeanSQL</span></div>
         <div>&nbsp;</div>
-        <div><span class="comment"># Install dependencies (skipping native compilation)</span></div>
-        <div><span class="prompt">$ </span><span class="cmd">npm install</span> <span class="arg">--ignore-scripts</span></div>
-        <div>&nbsp;</div>
-        <div><span class="comment"># Rebuild SQLite against Electron headers</span></div>
-        <div><span class="prompt">$ </span><span class="cmd">npm run</span> <span class="arg">rebuild:sqlite</span></div>
+        <div><span class="comment"># Install dependencies and rebuild SQLite in one step</span></div>
+        <div><span class="prompt">$ </span><span class="cmd">npm run</span> <span class="arg">install:dev</span></div>
         <div>&nbsp;</div>
         <div><span class="comment"># Start in development mode</span></div>
         <div><span class="prompt">$ </span><span class="cmd">npm run</span> <span class="arg">dev</span></div>
@@ -954,7 +966,8 @@
       <div class="code-block" style="margin-bottom:32px;">
         <div style="color:var(--text2);">┌──────────────────────────────────────────────────────────┐</div>
         <div style="color:var(--text2);">│  Main Process (Node.js + Electron)                       │</div>
-        <div style="color:var(--text2);">│  ConnectionManager · store.ts · AI Service · IPC handlers│</div>
+        <div style="color:var(--text2);">│  ConnectionManager · store.ts · LocalStore · AI Service  │</div>
+        <div style="color:var(--text2);">│  update service · IPC handlers                           │</div>
         <div style="color:var(--text2);">└───────────────────────┬──────────────────────────────────┘</div>
         <div style="color:var(--text2);">                        │  IPC (ipcMain / ipcRenderer)</div>
         <div style="color:var(--text2);">┌───────────────────────▼──────────────────────────────────┐</div>
@@ -970,11 +983,11 @@
       <div class="two-col">
         <div class="card-item">
           <h4>Main Process</h4>
-          <p>Opens and manages all database TCP/IP connections via <code>ConnectionManager</code>. Encrypts and persists connection configs using <code>safeStorage</code>. Registers all IPC handlers (<code>ipcMain.handle</code>) and dispatches AI tasks to local providers.</p>
+          <p>Opens and manages all database TCP/IP connections via <code>ConnectionManager</code>. Encrypts and persists connection configs using <code>safeStorage</code>, maintains the local SQLite app store, registers all IPC handlers (<code>ipcMain.handle</code>), and dispatches AI tasks to local providers.</p>
         </div>
         <div class="card-item">
           <h4>Renderer Process</h4>
-          <p>All UI rendering via React 18. Application state managed by Zustand + Immer. Calls <code>window.db.*</code> methods exposed by the preload bridge — never talking directly to database drivers.</p>
+          <p>All UI rendering via React 19. Application state managed by Zustand + Immer. Calls <code>window.db.*</code> methods exposed by the preload bridge — never talking directly to database drivers.</p>
         </div>
       </div>
 
@@ -983,16 +996,17 @@
         <table class="data-table">
           <thead><tr><th>Layer</th><th>Technology</th><th>Version</th></tr></thead>
           <tbody>
-            <tr><td>Shell</td><td>Electron</td><td>29</td></tr>
-            <tr><td>Build</td><td>electron-vite + Vite</td><td>2 / 5</td></tr>
-            <tr><td>UI</td><td>React + TypeScript</td><td>18 / 5</td></tr>
-            <tr><td>State</td><td>Zustand + Immer</td><td>4 / 10</td></tr>
+            <tr><td>Shell</td><td>Electron</td><td>42</td></tr>
+            <tr><td>Build</td><td>electron-vite + Vite</td><td>5 / 7</td></tr>
+            <tr><td>UI</td><td>React + TypeScript</td><td>19 / 6</td></tr>
+            <tr><td>State</td><td>Zustand + Immer</td><td>5 / 11</td></tr>
             <tr><td>SQL editor</td><td>CodeMirror 6 (<code>@uiw/react-codemirror</code>)</td><td>6</td></tr>
             <tr><td>Data grid</td><td><code>@tanstack/react-table</code></td><td>8</td></tr>
+            <tr><td>Charts</td><td><code>recharts</code> + <code>react-grid-layout</code></td><td>3 / 2</td></tr>
             <tr><td>Schema diagram</td><td><code>@xyflow/react</code> + <code>@dagrejs/dagre</code></td><td>12 / 3</td></tr>
-            <tr><td>DB drivers</td><td>mysql2, pg, better-sqlite3, mssql, mongodb</td><td>—</td></tr>
-            <tr><td>Tests</td><td>Vitest + Playwright</td><td>1 / 1</td></tr>
-            <tr><td>Packaging</td><td>electron-builder</td><td>24</td></tr>
+            <tr><td>DB drivers</td><td>mysql2, pg, better-sqlite3, mssql, mongodb, @clickhouse/client, cassandra-driver, ioredis, @elastic/elasticsearch, oracledb</td><td>—</td></tr>
+            <tr><td>Tests</td><td>Vitest + Playwright</td><td>4 / 1</td></tr>
+            <tr><td>Packaging</td><td>electron-builder</td><td>26</td></tr>
           </tbody>
         </table>
       </div>
@@ -1003,16 +1017,19 @@
         <div><span class="arg">├── main/</span><span class="comment">         # Electron main process (Node.js)</span></div>
         <div><span class="arg">│   ├── index.ts</span><span class="comment">      # BrowserWindow, lifecycle, IPC registration</span></div>
         <div><span class="arg">│   ├── store.ts</span><span class="comment">      # JSON persistence + safeStorage</span></div>
+        <div><span class="arg">│   ├── local-store/</span><span class="comment"># SQLite-backed app data storage</span></div>
+        <div><span class="arg">│   ├── migration/</span><span class="comment">  # Local storage schema migrations</span></div>
+        <div><span class="arg">│   ├── update/</span><span class="comment">     # Release version + update checks</span></div>
         <div><span class="arg">│   ├── ipc/</span><span class="comment">          # All ipcMain.handle registrations</span></div>
         <div><span class="arg">│   ├── ai/</span><span class="comment">           # Ollama + OpenAI-compatible service</span></div>
-        <div><span class="arg">│   └── db/</span><span class="comment">           # Adapters: MySQL, PostgreSQL, SQLite, MSSQL, MongoDB</span></div>
+        <div><span class="arg">│   └── db/</span><span class="comment">           # Adapters for 12 supported database engines</span></div>
         <div><span class="arg">├── preload/</span><span class="comment">      # contextBridge → window.db typed API</span></div>
         <div><span class="arg">└── renderer/</span><span class="comment">     # React app (sandboxed)</span></div>
         <div><span class="arg">    └── src/</span></div>
         <div><span class="arg">        ├── App.tsx</span><span class="comment">       # Root layout</span></div>
         <div><span class="arg">        ├── sql/dsl.ts</span><span class="comment">    # Dialect-aware SQL DSL</span></div>
         <div><span class="arg">        ├── store/</span><span class="comment">        # Zustand + Immer global state</span></div>
-        <div><span class="arg">        └── components/</span><span class="comment">   # ConnectionModal, Sidebar, QueryEditor, …</span></div>
+        <div><span class="arg">        └── components/</span><span class="comment">   # ConnectionModal, Sidebar, MetricDashboard, QueryEditor, TipsAndTricks, …</span></div>
       </div>
     </section>
 
@@ -1234,7 +1251,7 @@
           <div class="privacy-icon">💾</div>
           <div>
             <h4>Local-only storage</h4>
-            <p>Connections, saved queries, and settings are stored in your operating system's user-data directory. Passwords are encrypted with OS-backed secure storage when available, and data is never synced by KobeanSQL.</p>
+            <p>Connections and settings are stored in your operating system's user-data directory, while query history, saved queries, schema cache, logs, and dashboard layouts persist in a local SQLite store. Passwords are encrypted with OS-backed secure storage when available, and data is never synced by KobeanSQL.</p>
           </div>
         </div>
         <div class="privacy-row">
@@ -1327,12 +1344,13 @@
         KobeanSQL uses the best available tools for every layer of the stack.
       </p>
       <div class="tech-grid">
-        <div class="tech-pill">Electron 29<span>Shell</span></div>
-        <div class="tech-pill">React 18<span>UI Framework</span></div>
+        <div class="tech-pill">Electron 42<span>Shell</span></div>
+        <div class="tech-pill">React 19<span>UI Framework</span></div>
         <div class="tech-pill">TypeScript<span>Language</span></div>
         <div class="tech-pill">electron-vite<span>Build tool</span></div>
         <div class="tech-pill">Zustand + Immer<span>State management</span></div>
         <div class="tech-pill">CodeMirror 6<span>SQL editor</span></div>
+        <div class="tech-pill">Recharts<span>Dashboards</span></div>
         <div class="tech-pill">@tanstack/react-table<span>Data grid</span></div>
         <div class="tech-pill">lucide-react<span>Icons</span></div>
         <div class="tech-pill">mysql2<span>MySQL / MariaDB</span></div>
@@ -1340,6 +1358,7 @@
         <div class="tech-pill">better-sqlite3<span>SQLite</span></div>
         <div class="tech-pill">mssql<span>SQL Server</span></div>
         <div class="tech-pill">mongodb<span>MongoDB</span></div>
+        <div class="tech-pill">oracledb<span>Oracle</span></div>
         <div class="tech-pill">Vitest<span>Tests</span></div>
         <div class="tech-pill">semantic-release<span>CI / releases</span></div>
       </div>

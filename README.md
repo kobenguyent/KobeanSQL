@@ -8,7 +8,7 @@
 
 # KobeanSQL
 
-> A cross-platform desktop SQL client for developers — query, explore, and manage 12 database engines (MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle) from a single, beautiful native app — no browser, no cloud, no data leaving your machine.
+> A cross-platform desktop SQL client for developers — query, explore, visualize, and manage 12 database engines (MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle) from a single, beautiful native app — no browser, no cloud, no data leaving your machine.
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/kobenguyent/KobeanSQL/ci.yml?branch=main&style=flat-square&label=build)](https://github.com/kobenguyent/KobeanSQL/actions)
 [![Version](https://img.shields.io/github/package-json/v/kobenguyent/KobeanSQL?style=flat-square&color=7b7bea)](https://github.com/kobenguyent/KobeanSQL/releases/latest)
@@ -47,12 +47,14 @@
 - **CodeMirror 6 engine** — SQL syntax highlighting, bracket matching, and intelligent autocompletion powered by `@codemirror/lang-sql`
 - **One-click SQL beautify** — format messy SQL with `sql-formatter` directly from the toolbar
 - **KobeanSQL SQL DSL** — dialect-aware query builders for `SELECT`, `CALL`, `EXEC`, and functions; inserts boilerplate SQL so you start from a correct template, not a blank slate
+- **SQL Tips & Tricks modal** — open practical examples for `SELECT`, `JOIN`, aggregation, and safe data modification patterns without leaving the app
 - **Keyboard shortcut execution** — `Ctrl/⌘+Enter` runs the current query
 
 ### Data Visualization & Results
 - **Sortable, filterable results grid** — powered by `@tanstack/react-table` with global full-text filter and column-level sort
 - **Inline cell editing (PK-aware)** — edit table cells with generated `UPDATE` SQL and a confirmation modal before execution
 - **MongoDB edit/write workflow** — run `find` / `aggregate` plus write operations (`insertOne`, `updateOne`, `deleteMany`, `findOneAndUpdate`, `runCommand`, etc.) and inline MongoDB row edits/deletes from the results view
+- **Metric Dashboard** — build persistent drag-and-drop dashboards with stat, line, bar, and pie widgets powered by live SQL result sets
 - **CSV export** — export the current result set to a `.csv` file in one click
 - **Row count + query duration** — shown in the results panel footer after every execution
 - **Database Schema Visualizer** — interactive entity-relationship diagram (built with `@xyflow/react` and `@dagrejs/dagre`) that auto-lays out tables and foreign-key relationships for the selected database
@@ -71,6 +73,7 @@
 - **OS-native credential encryption** — passwords are encrypted at rest using Electron's `safeStorage` API (AES-256 backed by the OS keychain / DPAPI / libsecret)
 - **macOS vibrancy & Windows 11 acrylic** — true native translucency using `vibrancy: 'under-window'` and `backgroundMaterial: 'acrylic'`
 - **Offline-first** — all connections are direct TCP/IP; no proxy server required
+- **SQLite-backed app storage** — query history, saved queries, schema cache, connection logs, and dashboard layouts persist locally in `kobeansql-storage.db`
 - **Saved queries library** — store frequently used SQL snippets locally, categorized and searchable
 - **Query history panel** — filter and reopen recent successful/failed statements with timing and row-count metadata
 - **Resilient modal rendering** — Query History and Schema Visualizer now use guarded portal rendering to avoid renderer crashes from missing portal targets
@@ -161,13 +164,14 @@ KobeanSQL strictly follows Electron's two-process architecture with `contextIsol
 
 **Main Process responsibilities:**
 - Opening and managing all database TCP/IP connections (via `ConnectionManager`)
-- Encrypting and persisting connection configs and saved queries to the local filesystem
+- Encrypting and persisting connection configs to the local filesystem
+- Persisting structured app data — query history, schema cache, connection logs, and dashboard layouts — in a local SQLite store
 - Registering all IPC handlers (`ipcMain.handle`) that the renderer calls via `window.db`
 - AI task dispatch to local providers (Ollama, OpenAI-compatible)
 - Window lifecycle, native menu, and OS-level events
 
 **Renderer Process responsibilities:**
-- All UI rendering and user interaction (React 18 component tree)
+- All UI rendering and user interaction (React 19 component tree)
 - Local application state — active tabs, selected connection, results — managed by Zustand + Immer
 - SQL editor state (CodeMirror 6 view state, multi-tab)
 - Calling `window.db.*` methods exposed by the preload bridge; never talking directly to database drivers
@@ -176,19 +180,20 @@ KobeanSQL strictly follows Electron's two-process architecture with `contextIsol
 
 | Layer          | Technology                              | Version |
 |----------------|-----------------------------------------|---------|
-| Shell          | Electron                                | 29      |
-| Build          | electron-vite + Vite                    | 2 / 5   |
-| UI             | React + TypeScript                      | 18 / 5  |
+| Shell          | Electron                                | 42      |
+| Build          | electron-vite + Vite                    | 5 / 7   |
+| UI             | React + TypeScript                      | 19 / 6  |
 | Styling        | Custom CSS (glassmorphism design system)| —       |
-| State          | Zustand + Immer                         | 4 / 10  |
+| State          | Zustand + Immer                         | 5 / 11  |
 | SQL editor     | CodeMirror 6 (`@uiw/react-codemirror`)  | 6       |
 | Data grid      | `@tanstack/react-table`                 | 8       |
+| Charts         | `recharts` + `react-grid-layout`        | 3 / 2   |
 | Schema diagram | `@xyflow/react` + `@dagrejs/dagre`      | 12 / 3  |
-| Icons          | `lucide-react`                          | 0.344   |
+| Icons          | `lucide-react`                          | 1.16    |
 | DB drivers     | `mysql2`, `pg`, `better-sqlite3`, `mssql`, `mongodb`, `@clickhouse/client`, `cassandra-driver`, `ioredis`, `@elastic/elasticsearch`, `oracledb`| —      |
 | Logging        | `electron-log`                          | 5       |
-| Tests          | Vitest + Playwright                     | 1 / 1   |
-| Packaging      | electron-builder                        | 24      |
+| Tests          | Vitest + Playwright                     | 4 / 1   |
+| Packaging      | electron-builder                        | 26      |
 
 ---
 
@@ -450,11 +455,11 @@ Native Node addons must be recompiled against the Electron version they run in. 
 **Resetting app configuration**
 All configuration files live in the OS user-data directory. Delete them to start fresh:
 
-| File                 | Purpose                         |
-|----------------------|---------------------------------|
-| `connections.json`   | Saved connection configs        |
-| `saved-queries.json` | Saved SQL query library         |
-| `settings.json`      | App settings (query limit etc.) |
+| File                    | Purpose                                                        |
+|-------------------------|----------------------------------------------------------------|
+| `connections.json`      | Saved connection configs and encrypted credentials             |
+| `kobeansql-storage.db`  | Query history, saved queries, schema cache, logs, dashboards  |
+| `settings.json`         | App settings (query limit, update checks, theme, language)    |
 
 ### Log Locations
 
@@ -479,7 +484,9 @@ src/
 ├── main/                      # Electron main process (Node.js)
 │   ├── index.ts               # BrowserWindow creation, app lifecycle, IPC registration
 │   ├── store.ts               # JSON persistence + safeStorage encrypt/decrypt
+│   ├── local-store/           # SQLite-backed storage for history, cache, and dashboards
 │   ├── logger.ts              # electron-log wrapper (appLogger)
+│   ├── migration/             # Local SQLite migration runner
 │   ├── ipc/index.ts           # All ipcMain.handle registrations
 │   ├── ai/
 │   │   ├── service.ts         # createLocalAIService factory (ollama | openai-compatible)
@@ -494,6 +501,7 @@ src/
 │           ├── postgres.ts    # pg adapter
 │           ├── sqlite.ts      # better-sqlite3 adapter
 │           ├── mssql.ts       # mssql adapter
+│           ├── mongodb.ts     # mongodb adapter
 │           ├── cockroachdb.ts # pg adapter (extends PostgresAdapter)
 │           ├── clickhouse.ts  # @clickhouse/client adapter
 │           ├── cassandra.ts   # cassandra-driver adapter
@@ -511,8 +519,10 @@ src/
         ├── styles/globals.css           # Glassmorphism design system tokens
         └── components/
             ├── ConnectionModal/         # Add / edit connection form
+            ├── MetricDashboard/         # Drag-and-drop SQL metrics dashboard
             ├── Sidebar/                 # Connection + schema tree
             ├── TabBar/                  # Multi-tab navigation
+            ├── TipsAndTricks/           # SQL learning and reference modal
             ├── QueryEditor/             # CodeMirror 6 SQL editor
             └── ResultsTable/            # @tanstack/react-table results grid
 scripts/
@@ -520,6 +530,8 @@ scripts/
 tests/
 ├── types.test.ts              # DB_COLORS / DB_DEFAULT_PORTS constants
 ├── manager.test.ts            # ConnectionManager unit tests (mocked adapters)
+├── local-store.test.ts        # SQLite-backed local storage persistence tests
+├── migration.test.ts          # Local store migration coverage
 ├── redis-adapter.test.ts      # Redis CLI command tokenizer unit tests
 ├── cockroachdb-adapter.test.ts# CockroachDB version parsing and port tests
 └── store.test.ts              # Connection persistence (load/save JSON)
