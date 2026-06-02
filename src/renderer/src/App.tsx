@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Database, LayoutPanelLeft, Moon, Sun, Monitor, Info, Shield, Settings, Clock, Bug, GitBranch, Download, Terminal, Zap } from 'lucide-react'
+import { Database, LayoutPanelLeft, Moon, Sun, Monitor, Info, Shield, Settings, Clock, Bug, GitBranch, Download, Terminal, Zap, Lightbulb } from 'lucide-react'
 import { useAppStore } from './store'
 import { useIsLightTheme } from './hooks/useIsLightTheme'
 import { Sidebar } from './components/Sidebar'
@@ -9,6 +9,7 @@ import { QueryEditor } from './components/QueryEditor'
 import { ResultsTable } from './components/ResultsTable'
 import { ConnectionModal } from './components/ConnectionModal'
 import { SettingsModal } from './components/SettingsModal'
+import { TipsAndTricksModal } from './components/TipsAndTricks'
 import { QueryHistoryPanel } from './components/QueryHistory'
 import { SchemaVisualizer } from './components/SchemaVisualizer'
 import { RenderGuard } from './components/RenderGuard'
@@ -71,6 +72,7 @@ export default function App(): React.JSX.Element {
   const [showSettings, setShowSettings] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showSchemaVisualizer, setShowSchemaVisualizer] = useState(false)
+  const [showTips, setShowTips] = useState(false)
   const [closedUpdateVersion, setClosedUpdateVersion] = useState<string | null>(null)
 
   // Resize state
@@ -258,6 +260,13 @@ export default function App(): React.JSX.Element {
             data-tooltip={t('app.schemaVisualizer')}
           >
             <GitBranch size={15} />
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => setShowTips(true)}
+            data-tooltip={t('app.tipsAndTricks')}
+          >
+            <Lightbulb size={15} />
           </button>
           <button
             className="icon-btn"
@@ -579,6 +588,11 @@ export default function App(): React.JSX.Element {
       {/* Settings modal */}
       {showSettings && (
         <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* Tips & Tricks modal */}
+      {showTips && (
+        <TipsAndTricksModal onClose={() => setShowTips(false)} />
       )}
 
       {/* Query history panel */}

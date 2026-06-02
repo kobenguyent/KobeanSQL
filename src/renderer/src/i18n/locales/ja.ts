@@ -137,6 +137,11 @@ const ja = {
   'lang.vi': 'Tiếng Việt',
 
   // ── Update download ───────────────────────────────────────────
+  'tips.title': 'SQL Tips & Tricks',
+  'tips.footer': 'Hover over a table or column in the sidebar to inspect its schema.',
+  'app.tipsAndTricks': 'SQL Tips & Tricks',
+
+  // ── Update download ───────────────────────────────────────────
   'updates.downloadUpdate': 'アップデートをダウンロード',
   'updates.viewRelease': 'リリースを見る',
   'updates.downloading': 'ダウンロード中… {progress}%',

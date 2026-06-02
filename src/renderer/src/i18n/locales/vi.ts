@@ -137,6 +137,11 @@ const vi = {
   'lang.vi': 'Tiếng Việt',
 
   // ── Update download ───────────────────────────────────────────
+  'tips.title': 'SQL Tips & Tricks',
+  'tips.footer': 'Hover over a table or column in the sidebar to inspect its schema.',
+  'app.tipsAndTricks': 'SQL Tips & Tricks',
+
+  // ── Update download ───────────────────────────────────────────
   'updates.downloadUpdate': 'Tải xuống bản cập nhật',
   'updates.viewRelease': 'Xem bản phát hành',
   'updates.downloading': 'Đang tải xuống… {progress}%',

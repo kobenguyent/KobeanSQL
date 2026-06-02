@@ -142,6 +142,11 @@ const en = {
   'lang.ja': '日本語',
   'lang.vi': 'Tiếng Việt',
 
+  // ── Tips & Tricks ─────────────────────────────────────────────
+  'tips.title': 'SQL Tips & Tricks',
+  'tips.footer': 'Hover over a table or column in the sidebar to inspect its schema.',
+  'app.tipsAndTricks': 'SQL Tips & Tricks',
+
   // ── Update download ───────────────────────────────────────────
   'updates.downloadUpdate': 'Download Update',
   'updates.viewRelease': 'View release',
