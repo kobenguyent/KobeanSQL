@@ -42,6 +42,35 @@ export interface SchemaCacheEntry {
   cachedAt: number
 }
 
+export interface MetricDataPoint {
+  timestamp: number
+  value: number
+}
+
+export interface MetricDataResult {
+  metricId: string
+  data: MetricDataPoint[]
+}
+
+export interface DashboardWidget {
+  /** react-grid-layout key — same as the widget's unique id */
+  i: string
+  metricId: string
+  title: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface DashboardLayoutRecord {
+  id: string
+  name: string
+  /** JSON-serialised DashboardWidget[] */
+  widgetsJson: string
+  updatedAt: number
+}
+
 export type AITaskType = 'generate' | 'explain' | 'optimize'
 
 export interface AIRequest {
@@ -204,7 +233,19 @@ const dbAPI = {
   getSchemaCache: (connectionId: string, databaseName: string): Promise<SchemaCacheEntry | null> =>
     ipcRenderer.invoke('schema-cache:get', connectionId, databaseName),
   clearSchemaCache: (connectionId?: string): Promise<{ success: boolean }> =>
-    ipcRenderer.invoke('schema-cache:clear', connectionId)
+    ipcRenderer.invoke('schema-cache:clear', connectionId),
+
+  // Metric data
+  getMetricData: (metricId: string, params?: { points?: number }): Promise<MetricDataResult> =>
+    ipcRenderer.invoke('metrics:get-data', metricId, params),
+
+  // Dashboard layouts
+  getDashboardLayouts: (): Promise<DashboardLayoutRecord[]> =>
+    ipcRenderer.invoke('dashboard:get-layouts'),
+  saveDashboardLayout: (layout: DashboardLayoutRecord): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('dashboard:save-layout', layout),
+  deleteDashboardLayout: (id: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('dashboard:delete-layout', id)
 }
 
 if (process.contextIsolated) {

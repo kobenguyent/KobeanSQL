@@ -20,7 +20,7 @@ import { createLocalAIService } from '../ai/service'
 import { validateLocalBaseUrl } from '../ai/url-policy'
 import { isTrustedRendererUrl } from '../security'
 import type { UpdateService } from '../update/service'
-import { localStore, type ConnectionLogEntry, type PersistedQueryHistoryEntry } from '../local-store'
+import { localStore, type ConnectionLogEntry, type PersistedQueryHistoryEntry, type DashboardLayoutRecord } from '../local-store'
 
 class UntrustedRendererContextError extends Error {
   constructor() {
@@ -476,6 +476,68 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     'schema-cache:clear',
     async (_event: IpcMainInvokeEvent, connectionId?: string) => {
       localStore.clearSchemaCache(connectionId)
+      return { success: true }
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // Metrics data (mocked for now; real adapters can replace the switch cases)
+  // -------------------------------------------------------------------------
+
+  handleWithLogging(
+    'metrics:get-data',
+    async (_event: IpcMainInvokeEvent, metricId: string, params?: { points?: number }) => {
+      const points = Math.max(1, Math.min(200, params?.points ?? 20))
+      const now = Date.now()
+      const intervalMs = 60_000 // 1-minute buckets
+
+      const data: Array<{ timestamp: number; value: number }> = []
+      for (let i = points - 1; i >= 0; i--) {
+        const timestamp = now - i * intervalMs
+        let value: number
+        switch (metricId) {
+          case 'active_connections':
+            value = Math.round(5 + Math.random() * 15)
+            break
+          case 'queries_per_minute':
+            value = Math.round(100 + Math.random() * 400)
+            break
+          case 'query_exec_time':
+            value = Math.round(10 + Math.random() * 490)
+            break
+          case 'row_counts':
+            value = Math.round(1000 + Math.random() * 99000)
+            break
+          default:
+            value = Math.round(Math.random() * 100)
+        }
+        data.push({ timestamp, value })
+      }
+
+      return { metricId, data }
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // Dashboard layouts
+  // -------------------------------------------------------------------------
+
+  handleWithLogging('dashboard:get-layouts', async () => {
+    return localStore.getDashboardLayouts()
+  })
+
+  handleWithLogging(
+    'dashboard:save-layout',
+    async (_event: IpcMainInvokeEvent, layout: DashboardLayoutRecord) => {
+      localStore.saveDashboardLayout(layout)
+      return { success: true }
+    }
+  )
+
+  handleWithLogging(
+    'dashboard:delete-layout',
+    async (_event: IpcMainInvokeEvent, id: string) => {
+      localStore.deleteDashboardLayout(id)
       return { success: true }
     }
   )
