@@ -136,10 +136,10 @@ const ja = {
   'lang.ja': '日本語',
   'lang.vi': 'Tiếng Việt',
 
-  // ── Update download ───────────────────────────────────────────
-  'tips.title': 'SQL Tips & Tricks',
-  'tips.footer': 'Hover over a table or column in the sidebar to inspect its schema.',
-  'app.tipsAndTricks': 'SQL Tips & Tricks',
+  // ── Tips & Tricks ─────────────────────────────────────────────
+  'tips.title': 'SQLのヒントとコツ',
+  'tips.footer': 'サイドバーのテーブルまたはカラムにカーソルを合わせると、スキーマを確認できます。',
+  'app.tipsAndTricks': 'SQLのヒントとコツ',
 
   // ── Update download ───────────────────────────────────────────
   'updates.downloadUpdate': 'アップデートをダウンロード',

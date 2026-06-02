@@ -136,10 +136,10 @@ const fr = {
   'lang.ja': '日本語',
   'lang.vi': 'Tiếng Việt',
 
-  // ── Update download ───────────────────────────────────────────
-  'tips.title': 'SQL Tips & Tricks',
-  'tips.footer': 'Hover over a table or column in the sidebar to inspect its schema.',
-  'app.tipsAndTricks': 'SQL Tips & Tricks',
+  // ── Tips & Tricks ─────────────────────────────────────────────
+  'tips.title': 'Astuces SQL',
+  'tips.footer': 'Survolez une table ou une colonne dans la barre latérale pour inspecter son schéma.',
+  'app.tipsAndTricks': 'Astuces SQL',
 
   // ── Update download ───────────────────────────────────────────
   'updates.downloadUpdate': 'Télécharger la mise à jour',

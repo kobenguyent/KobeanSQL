@@ -136,10 +136,10 @@ const vi = {
   'lang.ja': '日本語',
   'lang.vi': 'Tiếng Việt',
 
-  // ── Update download ───────────────────────────────────────────
-  'tips.title': 'SQL Tips & Tricks',
-  'tips.footer': 'Hover over a table or column in the sidebar to inspect its schema.',
-  'app.tipsAndTricks': 'SQL Tips & Tricks',
+  // ── Tips & Tricks ─────────────────────────────────────────────
+  'tips.title': 'Mẹo và Thủ thuật SQL',
+  'tips.footer': 'Di chuột qua bảng hoặc cột trong thanh bên để xem lược đồ của nó.',
+  'app.tipsAndTricks': 'Mẹo và Thủ thuật SQL',
 
   // ── Update download ───────────────────────────────────────────
   'updates.downloadUpdate': 'Tải xuống bản cập nhật',
