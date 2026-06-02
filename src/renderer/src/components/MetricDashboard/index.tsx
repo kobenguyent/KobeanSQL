@@ -33,7 +33,7 @@ export interface DashboardWidget {
   /** 'metric' (default) or 'sql-query' */
   widgetType?: WidgetType
   /** used when widgetType === 'metric' */
-  metricId: string
+  metricId?: string
   title: string
   x: number
   y: number
@@ -250,6 +250,13 @@ interface SqlQueryWidgetCardProps {
   onRerun: (id: string) => void
 }
 
+function resolveYKey(widget: DashboardWidget, data: SqlDataPoint[]): string {
+  if (widget.yKey) return widget.yKey
+  if (data.length === 0) return 'y'
+  const keys = Object.keys(data[0])
+  return keys[1] ?? keys[0] ?? 'y'
+}
+
 function SqlQueryWidgetCard({
   widget,
   data,
@@ -259,7 +266,7 @@ function SqlQueryWidgetCard({
   onRerun,
 }: SqlQueryWidgetCardProps): React.JSX.Element {
   const xKey = widget.xKey ?? (data.length > 0 ? Object.keys(data[0])[0] : 'x')
-  const yKey = widget.yKey ?? (data.length > 0 ? Object.keys(data[0])[1] ?? Object.keys(data[0])[0] : 'y')
+  const yKey = resolveYKey(widget, data)
 
   const chartData = data.map((row) => ({
     x: String(row[xKey] ?? ''),
@@ -472,6 +479,13 @@ function AddWidgetModal({ onAddMetric, onAddSqlQuery, onCancel, connections }: A
   const [xKey, setXKey] = useState('')
   const [yKey, setYKey] = useState('')
   const [chartType, setChartType] = useState<ChartType>('bar')
+
+  // Sync connectionId once connections have loaded
+  useEffect(() => {
+    if (!connectionId && connections.length > 0) {
+      setConnectionId(connections[0].id ?? '')
+    }
+  }, [connectionId, connections])
 
   const handleMetricChange = (id: string) => {
     setMetricId(id)
@@ -694,7 +708,7 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
     try {
       const result = await window.db.query(widget.connectionId, widget.sqlQuery)
       if (result.error) {
-        setSqlErrors((prev) => ({ ...prev, [widget.i]: result.error ?? 'Query error' }))
+        setSqlErrors((prev) => ({ ...prev, [widget.i]: result.error! }))
         setSqlData((prev) => ({ ...prev, [widget.i]: [] }))
       } else {
         setSqlData((prev) => ({ ...prev, [widget.i]: result.rows as SqlDataPoint[] }))
@@ -711,7 +725,7 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
   // ── Fetch metric data for all metric widgets ──────────────────────────────
   const fetchAllMetrics = useCallback(async (currentWidgets: DashboardWidget[]) => {
     const metricWidgets = currentWidgets.filter((w) => (w.widgetType ?? 'metric') === 'metric')
-    const uniqueMetricIds = [...new Set(metricWidgets.map((w) => w.metricId))]
+    const uniqueMetricIds = [...new Set(metricWidgets.map((w) => w.metricId).filter(Boolean) as string[])]
     await Promise.all(
       uniqueMetricIds.map(async (metricId) => {
         setLoadingMetrics((prev) => ({ ...prev, [metricId]: true }))
@@ -792,7 +806,6 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
     const newWidget: DashboardWidget = {
       i: id,
       widgetType: 'sql-query',
-      metricId: '',
       title: params.title,
       connectionId: params.connectionId,
       sqlQuery: params.sqlQuery,
@@ -1045,8 +1058,8 @@ export function DashboardBuilder({ onClose }: Props): React.JSX.Element {
                   ) : (
                     <MetricWidgetCard
                       widget={widget}
-                      data={metricData[widget.metricId] ?? []}
-                      loading={loadingMetrics[widget.metricId] ?? false}
+                      data={metricData[widget.metricId ?? ''] ?? []}
+                      loading={loadingMetrics[widget.metricId ?? ''] ?? false}
                       onRemove={handleRemoveWidget}
                     />
                   )}
