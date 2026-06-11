@@ -1,3 +1,10 @@
+## [1.19.1](https://github.com/kobenguyent/KobeanSQL/compare/v1.19.0...v1.19.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* several issues ([#59](https://github.com/kobenguyent/KobeanSQL/issues/59)) ([5ac9f2c](https://github.com/kobenguyent/KobeanSQL/commit/5ac9f2c0279af4a0033a64339c73cbc7c848052a))
+
 # [1.19.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.18.0...v1.19.0) (2026-06-11)
 
 
