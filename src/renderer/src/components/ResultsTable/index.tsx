@@ -183,25 +183,45 @@ export function canPreviewCellValue(value: unknown): boolean {
 /** Cell value display — truncated with expand-on-click */
 function CellDisplay({
   value,
-  onExpand
+  onExpand,
+  isForeignKey,
+  onFollowFK
 }: {
   value: unknown
   onExpand: (val: unknown) => void
+  isForeignKey?: boolean
+  onFollowFK?: () => void
 }): React.JSX.Element {
   const str = formatCell(value)
   const isLong = canPreviewCellValue(value)
   const display = isLong ? str.slice(0, TRUNCATE_LEN).replace(/\n/g, '↵') + '…' : str
+  
+  const content = (
+    <span
+      className={`${cellClass(value)}${isForeignKey && value !== null && value !== undefined ? ' fk-value' : ''}`}
+      onClick={(e) => {
+        if (isForeignKey && value !== null && value !== undefined) {
+          e.stopPropagation()
+          onFollowFK?.()
+        }
+      }}
+      title={isForeignKey && value !== null && value !== undefined ? 'Click to follow foreign key' : undefined}
+    >
+      {display}
+    </span>
+  )
+
   if (!isLong) {
-    return <span className={cellClass(value)}>{display}</span>
+    return content
   }
 
   return (
     <span className="cell-display cell-display-expandable">
       <span
-        className={`cell-display-text ${cellClass(value)}`}
+        className="cell-display-text"
         title="Click preview to view full value"
       >
-        {display}
+        {content}
       </span>
       <button
         type="button"
@@ -940,7 +960,22 @@ export function ResultsTable({
           style={{ cursor: canEdit ? 'text' : 'default', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
           title={canEdit ? 'Double-click to edit' : undefined}
         >
-          <CellDisplay value={value} onExpand={(val) => { setExpandedValue(val); setShowViewer(true) }} />
+          <CellDisplay
+            value={value}
+            onExpand={(val) => { setExpandedValue(val); setShowViewer(true) }}
+            isForeignKey={!!fk}
+            onFollowFK={() => {
+              if (fk && value !== null && value !== undefined) {
+                const parts = fk.referencedTable.split('.')
+                const refSchema = parts.length > 1 ? parts[0] : schema
+                const refTable = parts.length > 1 ? parts[1] : parts[0]
+                void openTableInTab(connectionId!, refTable, database!, refSchema, {
+                  column: fk.referencedColumn,
+                  value
+                })
+              }
+            }}
+          />
         </span>
         {fk && value !== null && value !== undefined && (
           <button

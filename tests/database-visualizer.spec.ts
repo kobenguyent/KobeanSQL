@@ -20,11 +20,22 @@ const DOCS_SCREENSHOTS = {
   databaseVisualizer: path.join(REPO_ROOT, 'docs/screenshots/database-visualizer.png')
 }
 
+function getSanitizedEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  if (env.NODE_OPTIONS) {
+    env.NODE_OPTIONS = env.NODE_OPTIONS.replace('--openssl-legacy-provider', '').trim()
+    if (!env.NODE_OPTIONS) {
+      delete env.NODE_OPTIONS
+    }
+  }
+  return env
+}
+
 async function launchApp(homeDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await playwrightElectron.launch({
-    args: [MAIN_ENTRY],
+    args: [MAIN_ENTRY, `--user-data-dir=${path.join(homeDir, 'user-data')}`],
     env: {
-      ...process.env,
+      ...getSanitizedEnv(),
       HOME: homeDir,
       XDG_CONFIG_HOME: path.join(homeDir, '.config'),
       ELECTRON_DISABLE_SANDBOX: '1'
@@ -53,7 +64,8 @@ async function runSql(page: Page, sql: string, expectsRows = true): Promise<void
 function ensureElectronBinaryInstalled(): void {
   const install = spawnSync(process.execPath, [ELECTRON_INSTALLER], {
     cwd: REPO_ROOT,
-    encoding: 'utf8'
+    encoding: 'utf8',
+    env: getSanitizedEnv()
   })
 
   expect(install.status, install.stderr || install.stdout).toBe(0)
@@ -72,7 +84,7 @@ test('renders users/posts/comments schema graph and captures docs screenshots', 
     cwd: REPO_ROOT,
     encoding: 'utf8',
     env: {
-      ...process.env,
+      ...getSanitizedEnv(),
       ELECTRON_RUN_AS_NODE: '1'
     }
   })
@@ -110,7 +122,7 @@ test('renders users/posts/comments schema graph and captures docs screenshots', 
     await expect(mainLayout).toBeVisible()
     await mainLayout.screenshot({ path: DOCS_SCREENSHOTS.mainWindow })
 
-    const newTabButton = page.locator('.tab-new-btn')
+    const newTabButton = page.locator('.tab-new-btn').first()
     await expect(newTabButton).toBeVisible()
     await newTabButton.click()
 

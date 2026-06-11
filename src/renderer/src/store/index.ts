@@ -12,7 +12,8 @@ import type {
   SavedQuery,
   QueryHistoryEntry,
   AppSettings,
-  UpdateStatus
+  UpdateStatus,
+  ForeignKeyInfo
 } from '../types'
 import type { DatabaseSchema } from '@renderer/types/schema'
 import { buildProcedureCallSql, buildSelectTableSql, quoteIdentifier } from '../sql/dsl'

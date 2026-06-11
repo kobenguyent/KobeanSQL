@@ -81,6 +81,16 @@ function createWindow(): BrowserWindow {
 
 app.whenReady().then(async () => {
   appLogger.info('Application ready')
+
+  // Support overriding userData via --user-data-dir for E2E tests
+  const userDataArg = process.argv.find((arg) => arg.startsWith('--user-data-dir='))
+  if (userDataArg) {
+    const customPath = userDataArg.split('=')[1]
+    if (customPath) {
+      app.setPath('userData', path.resolve(customPath))
+    }
+  }
+
   await performMigrations()
   await localStore.open(app.getPath('userData'))
   registerIpcHandlers(manager, updateService)

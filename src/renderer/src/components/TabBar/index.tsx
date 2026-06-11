@@ -291,7 +291,7 @@ export function TabBar(): React.JSX.Element {
     }
   }
 
-  if (tabs.length === 0) return null
+  if (tabs.length === 0 && connections.length === 0) return null
 
   return (
     <>

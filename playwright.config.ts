@@ -2,7 +2,7 @@ import { defineConfig } from 'playwright/test'
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: 'database-visualizer.spec.ts',
+  testMatch: ['**/*.spec.ts', '**/*.test.ts'],
   timeout: 120_000,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,

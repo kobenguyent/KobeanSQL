@@ -74,7 +74,7 @@ export interface QueryTab {
 export interface ForeignKeyInfo {
   /** The FK column on this table */
   columnName: string
-  /** The referenced table (may be schema-qualified) */
+  /** The referenced table (maybe schema-qualified) */
   referencedTable: string
   /** The referenced column */
   referencedColumn: string

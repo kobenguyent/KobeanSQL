@@ -1162,6 +1162,18 @@ html, body, #root {
 .data-table td.null-value { color: var(--text-tertiary); font-style: italic; }
 .data-table td.number-value { color: #80c8ff; }
 .data-table td.bool-value { color: #c084fc; }
+.data-table td .fk-value {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: rgba(123, 123, 234, 0.3);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: color var(--transition-fast), text-decoration-color var(--transition-fast);
+}
+.data-table td .fk-value:hover {
+  color: var(--accent-hover);
+  text-decoration-color: var(--accent-hover);
+}
 .data-table tr:hover td { background: rgba(123, 123, 234, 0.04); }
 .data-table tr:nth-child(even) td { background: rgba(0,0,0,0.08); }
 
