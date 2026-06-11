@@ -237,8 +237,8 @@ export function Sidebar({ onNewConnection, onEditConnection }: Props): React.JSX
     // Resolve the active table name for {table} placeholder substitution.
     // Priority: (1) table name from the active tab, (2) selected table in the tree.
     let resolvedTable = ''
-    if (activeTab?.title && activeTab.tabType === 'table') {
-      resolvedTable = activeTab.title
+    if (activeTab?.tabType === 'table') {
+      resolvedTable = activeTab.tableName ?? activeTab.title
     } else if (tree.selectedTable) {
       // tree.selectedTable is "connId/dbName/tableName" or "connId/dbName/schema.tableName"
       const parts = tree.selectedTable.split('/')

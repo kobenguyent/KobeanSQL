@@ -341,7 +341,7 @@ export default function App(): React.JSX.Element {
                   <ResultsTable
                     result={activeTab.result}
                     connectionId={activeTab.connectionId}
-                    tableName={activeTab.tabType === 'table' ? activeTab.title : undefined}
+                    tableName={activeTab.tableName}
                     database={activeTab.database}
                     schema={activeTab.schema}
                     onRefresh={activeTab.tabType === 'table' ? () => runQuery(activeTab.id) : undefined}
