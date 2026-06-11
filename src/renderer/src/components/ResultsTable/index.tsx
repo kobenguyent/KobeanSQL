@@ -484,7 +484,7 @@ export function ResultsTable({
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
-  const [showFilter, setShowFilter] = useState(false)
+  const [showFilter, setShowFilter] = useState(true)
 
   // Cell viewer
   const [expandedValue, setExpandedValue] = useState<unknown>(null)
@@ -518,6 +518,14 @@ export function ResultsTable({
     setTableError(msg)
     if (tableErrorTimer.current) clearTimeout(tableErrorTimer.current)
     tableErrorTimer.current = setTimeout(() => setTableError(null), 4000)
+  }
+
+  const [tableSuccess, setTableSuccess] = useState<string | null>(null)
+  const tableSuccessTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function showTableSuccess(msg: string) {
+    setTableSuccess(msg)
+    if (tableSuccessTimer.current) clearTimeout(tableSuccessTimer.current)
+    tableSuccessTimer.current = setTimeout(() => setTableSuccess(null), 4000)
   }
 
   // Local state for table rows (to support mutations like prepend, optimistic delete/duplicate)
@@ -667,6 +675,7 @@ export function ResultsTable({
       }
       setPendingUpdate(null)
       setIsUpdating(false)
+      showTableSuccess('Update executed successfully.')
       onRefresh?.()
     } catch (err) {
       setUpdateError((err as Error).message)
@@ -708,6 +717,7 @@ export function ResultsTable({
       setPendingDelete(null)
       setIsDeleting(false)
       setSelectedRows(new Set())
+      showTableSuccess('Row(s) deleted successfully.')
       onRefresh?.()
     } catch (err) {
       setDeleteError((err as Error).message)
@@ -741,6 +751,8 @@ export function ResultsTable({
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { _tempId, ...rowData } = addingRowData
 
+    if (!confirm('Are you sure you want to insert this new row?')) return
+
     setSavingRowIds(prev => {
       const next = new Set(prev)
       next.add(tempId)
@@ -752,6 +764,7 @@ export function ResultsTable({
       if (success) {
         setAddingRowId(null)
         setAddingRowData({})
+        showTableSuccess('Row inserted successfully.')
         onRefresh?.()
       } else {
         showTableError('Failed to insert row.')
@@ -789,6 +802,7 @@ export function ResultsTable({
     try {
       const success = await window.db.duplicateRow(tableName, primaryKeyObject)
       if (success) {
+        showTableSuccess('Row duplicated successfully.')
         onRefresh?.()
       } else {
         showTableError('Failed to duplicate row.')
@@ -834,6 +848,7 @@ export function ResultsTable({
           next.delete(index)
           return next
         })
+        showTableSuccess('Row deleted successfully.')
       }
     } catch (err) {
       setLocalRows(originalRows)
@@ -852,6 +867,129 @@ export function ResultsTable({
     })
   }
 
+  const renderEditableCell = (rowIdx: number, colName: string, value: unknown, rowOriginal: Record<string, unknown> & { _tempId?: string }) => {
+    if (rowOriginal._tempId === addingRowId) {
+      return (
+        <input
+          className="cell-edit-input"
+          value={String(addingRowData[colName] ?? '')}
+          onChange={(e) => {
+            const val = e.target.value
+            setAddingRowData(prev => ({
+              ...prev,
+              [colName]: val
+            }))
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )
+    }
+
+    const isEditing = editingCell?.rowIdx === rowIdx && editingCell?.col === colName
+    const isDirty = isEditing && isValueDirty(editValue, editingCell?.original)
+    
+    if (isEditing) {
+      return (
+        <div className={`cell-edit-wrap${isDirty ? ' cell-dirty' : ''}`}>
+          <input
+            ref={editInputRef}
+            className="cell-edit-input"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => handleEditKeyDown(e, rowOriginal)}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            className="cell-action-btn cell-action-save"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => { e.stopPropagation(); commitEdit(rowOriginal) }}
+            title="Save (Enter)"
+          >
+            <Check size={10} />
+          </button>
+          <button
+            className="cell-action-btn cell-action-cancel"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => { e.stopPropagation(); setEditingCell(null) }}
+            title="Cancel (Esc)"
+          >
+            <X size={10} />
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <span
+        onDoubleClick={canEdit ? () => handleCellDoubleClick(rowIdx, colName, value) : undefined}
+        style={canEdit ? { cursor: 'text', display: 'block' } : undefined}
+        title={canEdit ? 'Double-click to edit' : undefined}
+      >
+        <CellDisplay value={value} onExpand={(val) => { setExpandedValue(val); setShowViewer(true) }} />
+      </span>
+    )
+  }
+
+  const renderRowActions = (row: Record<string, unknown> & { _tempId?: string }, index: number) => {
+    const isSaving = row._tempId ? savingRowIds.has(row._tempId) : false
+
+    if (row._tempId === addingRowId) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+          {isSaving ? (
+            <Loader2 size={12} className="spin" style={{ color: 'var(--accent)' }} />
+          ) : (
+            <>
+              <button
+                className="cell-action-btn"
+                style={{ color: 'var(--color-success)', borderColor: 'rgba(74, 222, 128, 0.3)' }}
+                onClick={() => handleSaveNewRow(row._tempId!)}
+                title="Save Row"
+              >
+                <Check size={11} />
+              </button>
+              <button
+                className="cell-action-btn"
+                style={{ color: 'var(--color-error)', borderColor: 'rgba(248, 113, 113, 0.3)' }}
+                onClick={() => handleCancelNewRow(row._tempId!)}
+                title="Cancel"
+              >
+                <X size={11} />
+              </button>
+            </>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+        {isSaving ? (
+          <Loader2 size={12} className="spin" style={{ color: 'var(--accent)' }} />
+        ) : (
+          <>
+            <button
+              className="cell-action-btn"
+              style={{ color: 'var(--color-info)', borderColor: 'rgba(96, 165, 250, 0.3)' }}
+              onClick={() => handleDuplicateRow(row)}
+              title="Duplicate Row"
+            >
+              <Copy size={11} />
+            </button>
+            <button
+              className="cell-action-btn"
+              style={{ color: 'var(--color-error)', borderColor: 'rgba(248, 113, 113, 0.3)' }}
+              onClick={() => handleDeleteRow(row, index)}
+              title="Delete Row"
+            >
+              <Trash2 size={11} />
+            </button>
+          </>
+        )}
+      </div>
+    )
+  }
+
   const columns = useMemo(
     () => {
       const baseCols = result.columns.map((col) => ({
@@ -863,68 +1001,7 @@ export function ResultsTable({
         maxSize: 1200,
         filterFn: 'includesString' as const,
         cell: (info: { getValue: () => unknown; row: { index: number; original: Record<string, unknown> & { _tempId?: string } } }) => {
-          const v = info.getValue()
-          const rowIdx = info.row.index
-          const row = info.row.original
-          
-          if (row._tempId === addingRowId) {
-            return (
-              <input
-                className="cell-edit-input"
-                value={String(addingRowData[col.name] ?? '')}
-                onChange={(e) => {
-                  const val = e.target.value
-                  setAddingRowData(prev => ({
-                    ...prev,
-                    [col.name]: val
-                  }))
-                }}
-                onClick={(e) => e.stopPropagation()}
-              />
-            )
-          }
-
-          const isEditing = editingCell?.rowIdx === rowIdx && editingCell?.col === col.name
-          const isDirty = isEditing && isValueDirty(editValue, editingCell?.original)
-          if (isEditing) {
-            return (
-              <div className={`cell-edit-wrap${isDirty ? ' cell-dirty' : ''}`}>
-                <input
-                  ref={editInputRef}
-                  className="cell-edit-input"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  onKeyDown={(e) => handleEditKeyDown(e, info.row.original)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <button
-                  className="cell-action-btn cell-action-save"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => { e.stopPropagation(); commitEdit(info.row.original) }}
-                  title="Save (Enter)"
-                >
-                  <Check size={10} />
-                </button>
-                <button
-                  className="cell-action-btn cell-action-cancel"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => { e.stopPropagation(); setEditingCell(null) }}
-                  title="Cancel (Esc)"
-                >
-                  <X size={10} />
-                </button>
-              </div>
-            )
-          }
-          return (
-            <span
-              onDoubleClick={canEdit ? () => handleCellDoubleClick(rowIdx, col.name, v) : undefined}
-              style={canEdit ? { cursor: 'text', display: 'block' } : undefined}
-              title={canEdit ? 'Double-click to edit' : undefined}
-            >
-              <CellDisplay value={v} onExpand={(val) => { setExpandedValue(val); setShowViewer(true) }} />
-            </span>
-          )
+          return renderEditableCell(info.row.index, col.name, info.getValue(), info.row.original)
         }
       }))
 
@@ -937,64 +1014,7 @@ export function ResultsTable({
           minSize: 80,
           maxSize: 150,
           cell: (info: { row: { index: number; original: Record<string, unknown> & { _tempId?: string } } }) => {
-            const row = info.row.original
-            const isSaving = row._tempId ? savingRowIds.has(row._tempId) : false
-
-            if (row._tempId === addingRowId) {
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                  {isSaving ? (
-                    <Loader2 size={12} className="spin" style={{ color: 'var(--accent)' }} />
-                  ) : (
-                    <>
-                      <button
-                        className="cell-action-btn"
-                        style={{ color: 'var(--color-success)', borderColor: 'rgba(74, 222, 128, 0.3)' }}
-                        onClick={() => handleSaveNewRow(row._tempId!)}
-                        title="Save Row"
-                      >
-                        <Check size={11} />
-                      </button>
-                      <button
-                        className="cell-action-btn"
-                        style={{ color: 'var(--color-error)', borderColor: 'rgba(248, 113, 113, 0.3)' }}
-                        onClick={() => handleCancelNewRow(row._tempId!)}
-                        title="Cancel"
-                      >
-                        <X size={11} />
-                      </button>
-                    </>
-                  )}
-                </div>
-              )
-            }
-
-            return (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                {isSaving ? (
-                  <Loader2 size={12} className="spin" style={{ color: 'var(--accent)' }} />
-                ) : (
-                  <>
-                    <button
-                      className="cell-action-btn"
-                      style={{ color: 'var(--color-info)', borderColor: 'rgba(96, 165, 250, 0.3)' }}
-                      onClick={() => handleDuplicateRow(row)}
-                      title="Duplicate Row"
-                    >
-                      <Copy size={11} />
-                    </button>
-                    <button
-                      className="cell-action-btn"
-                      style={{ color: 'var(--color-error)', borderColor: 'rgba(248, 113, 113, 0.3)' }}
-                      onClick={() => handleDeleteRow(row, info.row.index)}
-                      title="Delete Row"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </>
-                )}
-              </div>
-            )
+            return renderRowActions(info.row.original, info.row.index)
           }
         } as any)
       }
@@ -1141,6 +1161,28 @@ export function ResultsTable({
           </span>
         )}
 
+        {/* Inline operation success (auto-clears) */}
+        {tableSuccess && (
+          <span
+            style={{
+              fontSize: 'var(--font-size-xs)',
+              color: 'var(--color-success)',
+              background: 'rgba(74,222,128,0.1)',
+              border: '1px solid rgba(74,222,128,0.25)',
+              borderRadius: 20,
+              padding: '2px 10px',
+              whiteSpace: 'nowrap',
+              flexShrink: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: 280
+            }}
+            title={tableSuccess}
+          >
+            ✓ {tableSuccess}
+          </span>
+        )}
+
         {/* Selection count + bulk actions */}
         {selCount > 0 && (
           <span className="selection-badge">
@@ -1240,11 +1282,32 @@ export function ResultsTable({
                       {col.name}
                     </td>
                     <td className={cellClass(value)}>
-                      <CellDisplay value={value} onExpand={(val) => { setExpandedValue(val); setShowViewer(true) }} />
+                      {renderEditableCell(0, col.name, value, localRows[0])}
                     </td>
                   </tr>
                 )
               })}
+              {canEdit && (
+                <tr>
+                  <td style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontWeight: 600,
+                    fontSize: 'var(--font-size-xs)',
+                    color: 'var(--text-secondary)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    whiteSpace: 'nowrap',
+                    width: 160,
+                    borderRight: '1px solid var(--glass-border)',
+                    userSelect: 'none'
+                  }}>
+                    Actions
+                  </td>
+                  <td>
+                    {renderRowActions(localRows[0], 0)}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         ) : (
