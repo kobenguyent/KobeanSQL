@@ -306,3 +306,27 @@ describe('IPC ai:list-models channel', () => {
     expect(result).toEqual({ success: false, models: [], error: 'network down' })
   })
 })
+
+describe('IPC database mutation channels', () => {
+  beforeEach(() => {
+    handleMock.mockReset()
+  })
+
+  it('supports deleteRow, insertRow, and duplicateRow operations', async () => {
+    const { registerIpcHandlers } = await import('../src/main/ipc')
+    registerIpcHandlers(getManagerStub() as never)
+    const handlers = getHandlers()
+
+    expect(handlers['db:delete-row']).toBeTypeOf('function')
+    expect(handlers['db:insert-row']).toBeTypeOf('function')
+    expect(handlers['db:duplicate-row']).toBeTypeOf('function')
+
+    const deleteRes = await handlers['db:delete-row'](getTrustedEvent(), 'my_table', { id: 1 })
+    const insertRes = await handlers['db:insert-row'](getTrustedEvent(), 'my_table', { id: 1, name: 'test' })
+    const duplicateRes = await handlers['db:duplicate-row'](getTrustedEvent(), 'my_table', { id: 1 })
+
+    expect(deleteRes).toBe(true)
+    expect(insertRes).toBe(true)
+    expect(duplicateRes).toBe(true)
+  })
+})

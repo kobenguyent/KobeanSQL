@@ -10,7 +10,7 @@ import {
   type ColumnFiltersState,
   type ColumnSizingState
 } from '@tanstack/react-table'
-import { ArrowUp, ArrowDown, Download, Filter, Maximize2, RefreshCw, Edit2, Check, X, Trash2, Copy } from 'lucide-react'
+import { ArrowUp, ArrowDown, Download, Filter, Maximize2, RefreshCw, Edit2, Check, X, Trash2, Copy, Plus, Loader2 } from 'lucide-react'
 import type { QueryResult, ColumnInfo, DatabaseType } from '../../types'
 import { useAppStore } from '../../store'
 
@@ -520,6 +520,19 @@ export function ResultsTable({
     tableErrorTimer.current = setTimeout(() => setTableError(null), 4000)
   }
 
+  // Local state for table rows (to support mutations like prepend, optimistic delete/duplicate)
+  const [localRows, setLocalRows] = useState<(Record<string, unknown> & { _tempId?: string })[]>([])
+  const [addingRowId, setAddingRowId] = useState<string | null>(null)
+  const [addingRowData, setAddingRowData] = useState<Record<string, unknown>>({})
+  const [savingRowIds, setSavingRowIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    setLocalRows((result.rows || []).map((row, idx) => ({ ...row, _tempId: `row-${idx}-${Date.now()}` })))
+    setAddingRowId(null)
+    setAddingRowData({})
+    setSavingRowIds(new Set())
+  }, [result.rows])
+
   const conn = connectionId ? connections.find((c) => c.id === connectionId) : null
   const canEdit = !!(connectionId && tableName && conn)
 
@@ -702,6 +715,132 @@ export function ResultsTable({
     }
   }
 
+  const handleAddRow = () => {
+    if (!tableName) return
+    const newTempId = `new-row-${Date.now()}`
+    const newRow: Record<string, unknown> & { _tempId: string } = {
+      _tempId: newTempId
+    }
+    result.columns.forEach(col => {
+      newRow[col.name] = ''
+    })
+    setLocalRows(prev => [newRow, ...prev])
+    setAddingRowId(newTempId)
+    setAddingRowData(newRow)
+  }
+
+  const handleCancelNewRow = (tempId: string) => {
+    setLocalRows(prev => prev.filter(r => r._tempId !== tempId))
+    setAddingRowId(null)
+    setAddingRowData({})
+  }
+
+  const handleSaveNewRow = async (tempId: string) => {
+    if (!tableName || !connectionId) return
+    
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { _tempId, ...rowData } = addingRowData
+
+    setSavingRowIds(prev => {
+      const next = new Set(prev)
+      next.add(tempId)
+      return next
+    })
+
+    try {
+      const success = await window.db.insertRow(tableName, rowData)
+      if (success) {
+        setAddingRowId(null)
+        setAddingRowData({})
+        onRefresh?.()
+      } else {
+        showTableError('Failed to insert row.')
+      }
+    } catch (err) {
+      showTableError(`Error inserting row: ${(err as Error).message}`)
+    } finally {
+      setSavingRowIds(prev => {
+        const next = new Set(prev)
+        next.delete(tempId)
+        return next
+      })
+    }
+  }
+
+  const handleDuplicateRow = async (row: Record<string, unknown> & { _tempId?: string }) => {
+    if (!tableName || !connectionId || !row._tempId) return
+    
+    if (pkColumns.length === 0) {
+      showTableError('Cannot duplicate: table has no primary key columns.')
+      return
+    }
+
+    const primaryKeyObject = pkColumns.reduce((acc, col) => {
+      acc[col.name] = row[col.name]
+      return acc
+    }, {} as Record<string, unknown>)
+
+    setSavingRowIds(prev => {
+      const next = new Set(prev)
+      next.add(row._tempId!)
+      return next
+    })
+
+    try {
+      const success = await window.db.duplicateRow(tableName, primaryKeyObject)
+      if (success) {
+        onRefresh?.()
+      } else {
+        showTableError('Failed to duplicate row.')
+      }
+    } catch (err) {
+      showTableError(`Error duplicating row: ${(err as Error).message}`)
+    } finally {
+      setSavingRowIds(prev => {
+        const next = new Set(prev)
+        next.delete(row._tempId!)
+        return next
+      })
+    }
+  }
+
+  const handleDeleteRow = async (row: Record<string, unknown> & { _tempId?: string }, index: number) => {
+    if (!tableName || !connectionId || !row._tempId) return
+
+    if (pkColumns.length === 0) {
+      showTableError('Cannot delete: table has no primary key columns.')
+      return
+    }
+
+    if (!confirm('Are you sure you want to delete this row?')) return
+
+    const primaryKeyObject = pkColumns.reduce((acc, col) => {
+      acc[col.name] = row[col.name]
+      return acc
+    }, {} as Record<string, unknown>)
+
+    // Optimistically remove from UI
+    const originalRows = [...localRows]
+    setLocalRows(prev => prev.filter(r => r._tempId !== row._tempId))
+
+    try {
+      const success = await window.db.deleteRow(tableName, primaryKeyObject)
+      if (!success) {
+        setLocalRows(originalRows)
+        showTableError('Failed to delete row from database.')
+      } else {
+        setSelectedRows(prev => {
+          const next = new Set(prev)
+          next.delete(index)
+          return next
+        })
+      }
+    } catch (err) {
+      setLocalRows(originalRows)
+      showTableError(`Error deleting row: ${(err as Error).message}`)
+    }
+  }
+
   function copyRowsData(rows: { index: number; original: Record<string, unknown> }[]) {
     const selected = getSelectedVisibleRows(rows, selectedRows).map((r) => r.original)
     if (selected.length === 0) return
@@ -714,8 +853,8 @@ export function ResultsTable({
   }
 
   const columns = useMemo(
-    () =>
-      result.columns.map((col) => ({
+    () => {
+      const baseCols = result.columns.map((col) => ({
         id: col.name,
         accessorKey: col.name,
         header: col.name,
@@ -723,9 +862,28 @@ export function ResultsTable({
         minSize: 60,
         maxSize: 1200,
         filterFn: 'includesString' as const,
-        cell: (info: { getValue: () => unknown; row: { index: number; original: Record<string, unknown> } }) => {
+        cell: (info: { getValue: () => unknown; row: { index: number; original: Record<string, unknown> & { _tempId?: string } } }) => {
           const v = info.getValue()
           const rowIdx = info.row.index
+          const row = info.row.original
+          
+          if (row._tempId === addingRowId) {
+            return (
+              <input
+                className="cell-edit-input"
+                value={String(addingRowData[col.name] ?? '')}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setAddingRowData(prev => ({
+                    ...prev,
+                    [col.name]: val
+                  }))
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            )
+          }
+
           const isEditing = editingCell?.rowIdx === rowIdx && editingCell?.col === col.name
           const isDirty = isEditing && isValueDirty(editValue, editingCell?.original)
           if (isEditing) {
@@ -768,13 +926,88 @@ export function ResultsTable({
             </span>
           )
         }
-      })),
-    [result.columns, editingCell, editValue, canEdit, pkColumns, schema, database, tableName, conn?.type]
+      }))
+
+      if (canEdit) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        baseCols.push({
+          id: 'actions',
+          header: 'Actions',
+          size: 100,
+          minSize: 80,
+          maxSize: 150,
+          cell: (info: { row: { index: number; original: Record<string, unknown> & { _tempId?: string } } }) => {
+            const row = info.row.original
+            const isSaving = row._tempId ? savingRowIds.has(row._tempId) : false
+
+            if (row._tempId === addingRowId) {
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                  {isSaving ? (
+                    <Loader2 size={12} className="spin" style={{ color: 'var(--accent)' }} />
+                  ) : (
+                    <>
+                      <button
+                        className="cell-action-btn"
+                        style={{ color: 'var(--color-success)', borderColor: 'rgba(74, 222, 128, 0.3)' }}
+                        onClick={() => handleSaveNewRow(row._tempId!)}
+                        title="Save Row"
+                      >
+                        <Check size={11} />
+                      </button>
+                      <button
+                        className="cell-action-btn"
+                        style={{ color: 'var(--color-error)', borderColor: 'rgba(248, 113, 113, 0.3)' }}
+                        onClick={() => handleCancelNewRow(row._tempId!)}
+                        title="Cancel"
+                      >
+                        <X size={11} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              )
+            }
+
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                {isSaving ? (
+                  <Loader2 size={12} className="spin" style={{ color: 'var(--accent)' }} />
+                ) : (
+                  <>
+                    <button
+                      className="cell-action-btn"
+                      style={{ color: 'var(--color-info)', borderColor: 'rgba(96, 165, 250, 0.3)' }}
+                      onClick={() => handleDuplicateRow(row)}
+                      title="Duplicate Row"
+                    >
+                      <Copy size={11} />
+                    </button>
+                    <button
+                      className="cell-action-btn"
+                      style={{ color: 'var(--color-error)', borderColor: 'rgba(248, 113, 113, 0.3)' }}
+                      onClick={() => handleDeleteRow(row, info.row.index)}
+                      title="Delete Row"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </>
+                )}
+              </div>
+            )
+          }
+        } as any)
+      }
+
+      return baseCols
+    },
+    [result.columns, editingCell, editValue, canEdit, pkColumns, schema, database, tableName, conn?.type, addingRowId, addingRowData, savingRowIds]
   )
 
   const table = useReactTable({
-    data: result.rows,
+    data: localRows,
     columns,
+    getRowId: (row) => row._tempId || String(Math.random()),
     state: { sorting, columnFilters, columnSizing },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -788,7 +1021,7 @@ export function ResultsTable({
 
   const exportCSV = () => {
     const headers = result.columns.map((c) => c.name).join(',')
-    const rows = result.rows.map((row) =>
+    const rows = localRows.map((row) =>
       result.columns
         .map((c) => {
           const val = row[c.name]
@@ -813,7 +1046,7 @@ export function ResultsTable({
   }
 
   const filteredCount = table.getFilteredRowModel().rows.length
-  const isSingleRow = result.rows.length === 1
+  const isSingleRow = localRows.length === 1
   const filteredRows = table.getRowModel().rows
   const selectedVisibleRows = useMemo(() => getSelectedVisibleRows(filteredRows, selectedRows), [filteredRows, selectedRows])
   const selCount = selectedVisibleRows.length
@@ -942,6 +1175,17 @@ export function ResultsTable({
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          {canEdit && (
+            <button
+              className="btn btn-sm btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 8, height: 26, padding: '0 8px' }}
+              onClick={handleAddRow}
+              title="Add Row"
+            >
+              <Plus size={12} />
+              Add Row
+            </button>
+          )}
           {onRefresh && (
             <button
               className="icon-btn"
@@ -967,7 +1211,7 @@ export function ResultsTable({
       </div>
 
       <div className="results-table-wrap">
-        {result.rows.length === 0 ? (
+        {localRows.length === 0 ? (
           <div className="empty-state" style={{ padding: '20px', height: 80 }}>
             <span className="empty-state-title" style={{ fontSize: 'var(--font-size-sm)' }}>
               Query executed successfully — no rows returned
@@ -978,7 +1222,7 @@ export function ResultsTable({
           <table className="data-table">
             <tbody>
               {result.columns.map((col) => {
-                const value = result.rows[0][col.name]
+                const value = localRows[0][col.name]
                 return (
                   <tr key={col.name}>
                     <td style={{
@@ -1026,23 +1270,27 @@ export function ResultsTable({
                   {hg.headers.map((header) => (
                     <th
                       key={header.id}
-                      onClick={header.column.getToggleSortingHandler()}
+                      onClick={header.column.id === 'actions' ? undefined : header.column.getToggleSortingHandler()}
                       style={{ width: header.getSize(), minWidth: header.column.columnDef.minSize }}
                     >
                       {flexRender(header.column.columnDef.header, header.getContext())}
-                      <span className="sort-indicator">
-                        {header.column.getIsSorted() === 'asc' ? (
-                          <ArrowUp size={10} />
-                        ) : header.column.getIsSorted() === 'desc' ? (
-                          <ArrowDown size={10} />
-                        ) : null}
-                      </span>
-                      <div
-                        className={`column-resize-handle${header.column.getIsResizing() ? ' is-resizing' : ''}`}
-                        onMouseDown={header.getResizeHandler()}
-                        onTouchStart={header.getResizeHandler()}
-                        onClick={(e) => e.stopPropagation()}
-                      />
+                      {header.column.id !== 'actions' && (
+                        <>
+                          <span className="sort-indicator">
+                            {header.column.getIsSorted() === 'asc' ? (
+                              <ArrowUp size={10} />
+                            ) : header.column.getIsSorted() === 'desc' ? (
+                              <ArrowDown size={10} />
+                            ) : null}
+                          </span>
+                          <div
+                            className={`column-resize-handle${header.column.getIsResizing() ? ' is-resizing' : ''}`}
+                            onMouseDown={header.getResizeHandler()}
+                            onTouchStart={header.getResizeHandler()}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </>
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -1052,14 +1300,16 @@ export function ResultsTable({
                   <th style={{ width: 50, minWidth: 50 }} />
                   {table.getHeaderGroups()[0]?.headers.map((header) => (
                     <th key={header.id} style={{ padding: '2px 4px', width: header.getSize() }}>
-                      <input
-                        className="column-filter-input"
-                        type="text"
-                        value={(header.column.getFilterValue() as string) ?? ''}
-                        onChange={(e) => header.column.setFilterValue(e.target.value || undefined)}
-                        placeholder={`Filter ${header.column.id}…`}
-                        onClick={(e) => e.stopPropagation()}
-                      />
+                      {header.column.id !== 'actions' && (
+                        <input
+                          className="column-filter-input"
+                          type="text"
+                          value={(header.column.getFilterValue() as string) ?? ''}
+                          onChange={(e) => header.column.setFilterValue(e.target.value || undefined)}
+                          placeholder={`Filter ${header.column.id}…`}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -1076,22 +1326,28 @@ export function ResultsTable({
                     onContextMenu={(e) => handleContextMenu(e, row.index)}
                   >
                     <td className="row-num-td" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        className="row-checkbox"
-                        checked={isSelected}
-                        onChange={(e) => {
-                          e.stopPropagation()
-                          setSelectedRows((prev) => {
-                            const next = new Set(prev)
-                            if (next.has(row.index)) next.delete(row.index)
-                            else next.add(row.index)
-                            return next
-                          })
-                          setLastSelectedRow(row.index)
-                        }}
-                      />
-                      <span className="row-num-label">{idx + 1}</span>
+                      {row.original._tempId === addingRowId ? (
+                        <span className="row-num-label" style={{ fontWeight: 'bold', fontSize: '13px', color: 'var(--accent)' }}>*</span>
+                      ) : (
+                        <>
+                          <input
+                            type="checkbox"
+                            className="row-checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              e.stopPropagation()
+                              setSelectedRows((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(row.index)) next.delete(row.index)
+                                else next.add(row.index)
+                                return next
+                              })
+                              setLastSelectedRow(row.index)
+                            }}
+                          />
+                          <span className="row-num-label">{idx + 1}</span>
+                        </>
+                      )}
                     </td>
                     {row.getVisibleCells().map((cell) => {
                       const isEditingCell = editingCell?.rowIdx === row.index && editingCell?.col === cell.column.id

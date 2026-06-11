@@ -137,6 +137,33 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     }
   )
 
+  // Mock delete row
+  handleWithLogging(
+    'db:delete-row',
+    async (_event: IpcMainInvokeEvent, _tableName: string, _primaryKeyObject: Record<string, unknown>) => {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      return true
+    }
+  )
+
+  // Mock insert row
+  handleWithLogging(
+    'db:insert-row',
+    async (_event: IpcMainInvokeEvent, _tableName: string, _rowData: Record<string, unknown>) => {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      return true
+    }
+  )
+
+  // Mock duplicate row
+  handleWithLogging(
+    'db:duplicate-row',
+    async (_event: IpcMainInvokeEvent, _tableName: string, _primaryKeyObject: Record<string, unknown>) => {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      return true
+    }
+  )
+
   // Get databases list
   handleWithLogging('db:get-databases', async (_event: IpcMainInvokeEvent, connectionId: string) => {
     return manager.getDatabases(connectionId)
