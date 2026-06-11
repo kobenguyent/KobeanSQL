@@ -686,6 +686,7 @@ export const useAppStore = create<AppState>()(
       const tab: QueryTab = {
         id,
         title: tabTitle,
+        tableName,
         tabType: 'table',
         connectionId,
         sql,

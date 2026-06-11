@@ -57,6 +57,7 @@ export interface ColumnInfo {
 export interface QueryTab {
   id: string
   title: string
+  tableName?: string
   tabType: 'query' | 'table' | 'procedure'
   tabColor?: string
   groupTitle?: string
