@@ -1,3 +1,10 @@
+# [1.20.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.19.1...v1.20.0) (2026-06-11)
+
+
+### Features
+
+* group tabs ([#60](https://github.com/kobenguyent/KobeanSQL/issues/60)) ([e0a9d84](https://github.com/kobenguyent/KobeanSQL/commit/e0a9d84d485bfe778bcc8df1225078a308119439))
+
 ## [1.19.1](https://github.com/kobenguyent/KobeanSQL/compare/v1.19.0...v1.19.1) (2026-06-11)
 
 
