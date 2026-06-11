@@ -8,6 +8,7 @@ import {
   buildDeleteMongoQuery,
   buildMongoPkFilter
 } from '../src/renderer/src/components/ResultsTable'
+import { buildSelectTableSql } from '../src/renderer/src/sql/dsl'
 
 describe('ResultsTable Logic', () => {
   describe('quoteIdentifierForDb', () => {
@@ -61,6 +62,36 @@ describe('ResultsTable Logic', () => {
     it('returns null if no PK columns provided', () => {
       expect(buildInlineUpdateSql(row, 'name', 'new_name', [], 'users')).toBeNull()
       expect(buildDeleteSql(row, [], 'users')).toBeNull()
+    })
+  })
+
+  describe('buildSelectTableSql', () => {
+    it('builds basic SELECT', () => {
+      const sql = buildSelectTableSql('postgres', 'users', 'public', 100)
+      expect(sql).toBe('SELECT * FROM "public"."users" LIMIT 100;')
+    })
+
+    it('builds SELECT with WHERE clause', () => {
+      const sql = buildSelectTableSql('postgres', 'users', 'public', 100, { column: 'id', value: 123 })
+      expect(sql).toContain('WHERE "id" = 123')
+    })
+
+    it('quotes string values in WHERE clause', () => {
+      const sql = buildSelectTableSql('postgres', 'users', undefined, 100, { column: 'name', value: "kobe's" })
+      expect(sql).toContain("WHERE \"name\" = 'kobe''s'")
+    })
+
+    it('handles boolean values in WHERE clause by dialect', () => {
+      const pgSql = buildSelectTableSql('postgres', 'users', undefined, 10, { column: 'active', value: true })
+      expect(pgSql).toContain('WHERE "active" = TRUE')
+
+      const mssqlSql = buildSelectTableSql('mssql', 'users', undefined, 10, { column: 'active', value: true })
+      expect(mssqlSql).toContain('WHERE [active] = 1')
+    })
+
+    it('builds MongoDB find with filter', () => {
+      const query = buildSelectTableSql('mongodb', 'users', undefined, 50, { column: 'dept', value: 'sales' })
+      expect(query).toBe('db.users.find({"dept":"sales"}).limit(50)')
     })
   })
 

@@ -77,7 +77,7 @@
   "build": {
     "appId": "com.kobenguyent.kobeansql",
     "productName": "KobeanSQL",
-    "copyright": "Copyright © 2024 kobenguyent",
+    "copyright": "Copyright © 2026 joseptThien - kobenguyent",
     "icon": "build/icon",
     "directories": {
       "output": "dist"

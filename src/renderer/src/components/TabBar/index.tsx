@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, X, Table, Code2, FunctionSquare, ChevronsDown, ChevronsUp } from 'lucide-react'
+import { Plus, X, Table, Code2, FunctionSquare, ChevronsDown, ChevronsUp, Database } from 'lucide-react'
 import { useAppStore } from '../../store'
 import type { QueryTab } from '../../types'
+import { DB_COLORS } from '../../types'
 
 const TAB_COLORS = ['#7c3aed', '#2563eb', '#0f766e', '#15803d', '#b45309', '#be123c']
 const GROUP_COLORS = ['#8b5cf6', '#3b82f6', '#14b8a6', '#22c55e', '#f59e0b', '#ec4899']
@@ -28,6 +29,24 @@ export function TabBar(): React.JSX.Element {
     setTabGroup,
     setStatus
   } = useAppStore()
+
+  // Process tabs to include automatic grouping by connection
+  const processedTabs = useMemo(() => {
+    return tabs.map((tab) => {
+      if (tab.groupTitle) return { ...tab, isAutoGroup: false }
+      const conn = connections.find((c) => c.id === tab.connectionId)
+      if (conn) {
+        return {
+          ...tab,
+          groupTitle: conn.name,
+          groupColor: conn.color || DB_COLORS[conn.type],
+          isAutoGroup: true
+        }
+      }
+      return { ...tab, isAutoGroup: false }
+    })
+  }, [tabs, connections])
+
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
   const [pendingCloseSaveName, setPendingCloseSaveName] = useState('')
   const [pendingCloseSaveCategory, setPendingCloseSaveCategory] = useState('')
@@ -55,14 +74,14 @@ export function TabBar(): React.JSX.Element {
   )
   const groupShapeByTabId = useMemo(() => {
     const map: Record<string, 'single' | 'start' | 'middle' | 'end'> = {}
-    for (let i = 0; i < tabs.length; i += 1) {
-      const tab = tabs[i]
+    for (let i = 0; i < processedTabs.length; i += 1) {
+      const tab = processedTabs[i]
       if (!tab.groupTitle) {
         map[tab.id] = 'single'
         continue
       }
-      const prev = tabs[i - 1]
-      const next = tabs[i + 1]
+      const prev = processedTabs[i - 1]
+      const next = processedTabs[i + 1]
       const samePrev = prev?.groupTitle === tab.groupTitle
       const sameNext = next?.groupTitle === tab.groupTitle
       if (!samePrev && !sameNext) map[tab.id] = 'single'
@@ -71,23 +90,23 @@ export function TabBar(): React.JSX.Element {
       else map[tab.id] = 'end'
     }
     return map
-  }, [tabs])
+  }, [processedTabs])
   const availableGroupTitles = useMemo(
     () => Array.from(new Set(tabs.map((t) => t.groupTitle).filter((v): v is string => Boolean(v)))),
     [tabs]
   )
   const visibleTabs = useMemo(() => {
     const firstByGroup = new Map<string, string>()
-    for (const tab of tabs) {
+    for (const tab of processedTabs) {
       if (!tab.groupTitle) continue
       if (!firstByGroup.has(tab.groupTitle)) firstByGroup.set(tab.groupTitle, tab.id)
     }
-    return tabs.filter((tab) => {
+    return processedTabs.filter((tab) => {
       if (!tab.groupTitle) return true
       if (!collapsedGroups.has(tab.groupTitle!)) return true
       return firstByGroup.get(tab.groupTitle) === tab.id
     })
-  }, [tabs, collapsedGroups])
+  }, [processedTabs, collapsedGroups])
 
   const isDirtyQueryTab = (tabId: string): boolean => {
     const tab = tabs.find((t) => t.id === tabId)
@@ -102,8 +121,8 @@ export function TabBar(): React.JSX.Element {
   }
 
   const applyGroupColor = (tabId: string, color: string | null): void => {
-    const tab = tabs.find((t) => t.id === tabId)
-    if (!tab?.groupTitle) {
+    const tab = processedTabs.find((t) => t.id === tabId)
+    if (!tab?.groupTitle || tab.isAutoGroup) {
       setContextMenu(null)
       return
     }
@@ -138,10 +157,11 @@ export function TabBar(): React.JSX.Element {
   }
 
   const openGroupMembersEditor = (tab: QueryTab): void => {
-    if (!tab.groupTitle) return
+    const pTab = processedTabs.find(t => t.id === tab.id)
+    if (!pTab?.groupTitle || pTab.isAutoGroup) return
     const selected = new Set(
       tabs
-        .filter((t) => t.id !== tab.id && t.groupTitle === tab.groupTitle)
+        .filter((t) => t.id !== tab.id && t.groupTitle === pTab.groupTitle)
         .map((t) => t.id)
     )
     setGroupMembersEditor({ sourceTabId: tab.id, selectedTabIds: selected })
@@ -194,10 +214,10 @@ export function TabBar(): React.JSX.Element {
 
   const handleTabDrop = (targetTab: QueryTab, draggedTabId: string, placeAfter: boolean): void => {
     if (targetTab.id === draggedTabId) return
-    const draggedTab = tabs.find((t) => t.id === draggedTabId)
+    const draggedTab = processedTabs.find((t) => t.id === draggedTabId)
     if (!draggedTab) return
     // Reorder only. Do not auto-change group metadata on drop.
-    if (draggedTab.groupTitle) {
+    if (draggedTab.groupTitle && !draggedTab.isAutoGroup) {
       const blockIds = tabs.filter((t) => t.groupTitle === draggedTab.groupTitle).map((t) => t.id)
       const ids = new Set(blockIds)
       if (ids.has(targetTab.id)) return
@@ -213,13 +233,14 @@ export function TabBar(): React.JSX.Element {
   }
 
   const handleDropToGroupChip = (targetTab: QueryTab, draggedTabId: string): void => {
-    if (!targetTab.groupTitle || targetTab.id === draggedTabId) return
+    const pTarget = processedTabs.find(t => t.id === targetTab.id)
+    if (!pTarget?.groupTitle || targetTab.id === draggedTabId || pTarget.isAutoGroup) return
     const targetGroupColor = targetTab.groupColor ?? GROUP_COLORS[0]
-    setTabGroup(draggedTabId, targetTab.groupTitle, targetGroupColor)
+    setTabGroup(draggedTabId, pTarget.groupTitle, targetGroupColor)
     const remainingTabs = tabs.filter((t) => t.id !== draggedTabId)
     let insertIndex = remainingTabs.findIndex((t) => t.id === targetTab.id)
     for (let i = 0; i < remainingTabs.length; i += 1) {
-      if (remainingTabs[i].groupTitle === targetTab.groupTitle) {
+      if (remainingTabs[i].groupTitle === pTarget.groupTitle) {
         insertIndex = i
       }
     }
@@ -229,7 +250,7 @@ export function TabBar(): React.JSX.Element {
   }
 
   const joinTabToGroup = (tabId: string, groupTitle: string): void => {
-    const target = tabs.find((t) => t.groupTitle === groupTitle)
+    const target = processedTabs.find((t) => t.groupTitle === groupTitle && !t.isAutoGroup)
     if (!target) return
     handleDropToGroupChip(target, tabId)
   }
@@ -314,7 +335,7 @@ export function TabBar(): React.JSX.Element {
               dragOverGroupTitle && tab.groupTitle === dragOverGroupTitle ? ' tab-group-drop-target' : ''
             }${isCollapsedGroupLeader ? ' tab-group-minimized' : ''}${dropIndicator?.tabId === tab.id && dropIndicator.side === 'left' ? ' tab-insert-left' : ''}${
               dropIndicator?.tabId === tab.id && dropIndicator.side === 'right' ? ' tab-insert-right' : ''
-            }`}
+            }${tab.isAutoGroup ? ' tab-auto-grouped' : ''}`}
             onClick={() => setActiveTab(tab.id)}
             draggable
             onDragStart={(e) => {
@@ -349,7 +370,7 @@ export function TabBar(): React.JSX.Element {
               if (!draggedTabId) return
               // Best-practice behavior: when dropping near the group chip area on grouped tabs,
               // treat it as an explicit "join this group" action.
-              if (tab.groupTitle) {
+              if (tab.groupTitle && !tab.isAutoGroup) {
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
                 const offsetX = e.clientX - rect.left
                 if (offsetX <= 120) {
@@ -375,14 +396,14 @@ export function TabBar(): React.JSX.Element {
           >
             {isCollapsedGroupLeader ? (
               <span
-                className="tab-group-chip tab-group-chip-minimized"
+                className={`tab-group-chip tab-group-chip-minimized ${tab.isAutoGroup ? 'tab-group-chip-auto' : ''}`}
                 style={{
                   borderColor: `${tab.groupColor ?? '#64748b'}66`,
                   color: tab.groupColor ?? 'var(--text-secondary)'
                 }}
                 title={tab.groupTitle}
               >
-                <span className="tab-group-chip-dot" style={{ background: tab.groupColor ?? '#64748b' }} />
+                {tab.isAutoGroup ? <Database size={10} style={{ marginRight: 4, opacity: 0.8 }} /> : <span className="tab-group-chip-dot" style={{ background: tab.groupColor ?? '#64748b' }} />}
                 <button
                   className="tab-group-collapse-btn"
                   onClick={(e) => {
@@ -396,7 +417,7 @@ export function TabBar(): React.JSX.Element {
                 <span
                   className="tab-group-chip-text"
                   onDragOver={(e) => {
-                    if (!tab.groupTitle || draggingTabId === tab.id) return
+                    if (!tab.groupTitle || tab.isAutoGroup || draggingTabId === tab.id) return
                     e.preventDefault()
                     setDragOverGroupTitle(tab.groupTitle)
                   }}
@@ -420,14 +441,14 @@ export function TabBar(): React.JSX.Element {
                 <span className="tab-name">
                   {tab.groupTitle && (groupShapeByTabId[tab.id] === 'start' || groupShapeByTabId[tab.id] === 'single') && (
                     <span
-                      className="tab-group-chip"
+                      className={`tab-group-chip ${tab.isAutoGroup ? 'tab-group-chip-auto' : ''}`}
                       style={{
                         borderColor: `${tab.groupColor ?? '#64748b'}66`,
                         color: tab.groupColor ?? 'var(--text-secondary)'
                       }}
                       title={tab.groupTitle}
                     >
-                      <span className="tab-group-chip-dot" style={{ background: tab.groupColor ?? '#64748b' }} />
+                      {tab.isAutoGroup ? <Database size={10} style={{ marginRight: 4, opacity: 0.8 }} /> : <span className="tab-group-chip-dot" style={{ background: tab.groupColor ?? '#64748b' }} />}
                       <button
                         className="tab-group-collapse-btn"
                         onClick={(e) => {
@@ -441,7 +462,7 @@ export function TabBar(): React.JSX.Element {
                       <span
                         className="tab-group-chip-text"
                         onDragOver={(e) => {
-                          if (!tab.groupTitle || draggingTabId === tab.id) return
+                          if (!tab.groupTitle || tab.isAutoGroup || draggingTabId === tab.id) return
                           e.preventDefault()
                           setDragOverGroupTitle(tab.groupTitle)
                         }}
@@ -491,12 +512,13 @@ export function TabBar(): React.JSX.Element {
             onClick={(e) => e.stopPropagation()}
           >
             {(() => {
-              const tab = tabs.find((t) => t.id === contextMenu.tabId)
+              const tab = processedTabs.find((t) => t.id === contextMenu.tabId)
               if (!tab) return null
+              const isAuto = tab.isAutoGroup
               return (
                 <>
                   <button className="tab-context-item" onClick={() => editGroupTitle(tab)}>
-                    Set Group Title...
+                    {isAuto ? 'Set Custom Group Title...' : 'Edit Group Title...'}
                   </button>
                   {availableGroupTitles.length > 0 && (
                     <button
@@ -506,7 +528,7 @@ export function TabBar(): React.JSX.Element {
                         setContextMenu(null)
                       }}
                     >
-                      Join Group...
+                      Join Custom Group...
                     </button>
                   )}
                   {tab.groupTitle && (
@@ -514,33 +536,37 @@ export function TabBar(): React.JSX.Element {
                       {collapsedGroups.has(tab.groupTitle!) ? 'Expand Group' : 'Minimize Group'}
                     </button>
                   )}
-                  {tab.groupTitle && (
+                  {tab.groupTitle && !isAuto && (
                     <button className="tab-context-item" onClick={() => ungroupTabs(tab.groupTitle as string)}>
-                      Ungroup Tabs
+                      Remove from Custom Group
                     </button>
                   )}
-                  {tab.groupTitle && (
+                  {tab.groupTitle && !isAuto && (
                     <button className="tab-context-item" onClick={() => openGroupMembersEditor(tab)}>
                       Choose Tabs For Group...
                     </button>
                   )}
-                  <div className="tab-context-label">Group Color</div>
-                  <div className="tab-context-colors">
-                    {GROUP_COLORS.map((color) => (
-                      <button
-                        key={`group-${color}`}
-                        className="tab-context-color"
-                        style={{ background: color }}
-                        onClick={() => applyGroupColor(tab.id, color)}
-                        title={color}
-                      />
-                    ))}
-                    <button className="tab-context-clear" onClick={() => applyGroupColor(tab.id, null)}>
-                      Clear
-                    </button>
-                  </div>
+                  {tab.groupTitle && !isAuto && (
+                    <>
+                      <div className="tab-context-label">Group Color</div>
+                      <div className="tab-context-colors">
+                        {GROUP_COLORS.map((color) => (
+                          <button
+                            key={`group-${color}`}
+                            className="tab-context-color"
+                            style={{ background: color }}
+                            onClick={() => applyGroupColor(tab.id, color)}
+                            title={color}
+                          />
+                        ))}
+                        <button className="tab-context-clear" onClick={() => applyGroupColor(tab.id, null)}>
+                          Clear
+                        </button>
+                      </div>
+                    </>
+                  )}
                   <div className="tab-context-sep" />
-                  <div className="tab-context-label">Tab Color</div>
+                  <div className="tab-context-label">Tab Color Override</div>
                   <div className="tab-context-colors">
                     {TAB_COLORS.map((color) => (
                       <button
@@ -562,6 +588,7 @@ export function TabBar(): React.JSX.Element {
         </div>
       )}
       {groupEditor && createPortal(
+...
         <div className="modal-overlay" onClick={() => setGroupEditor(null)}>
           <div className="modal-panel" style={{ width: 380, maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">

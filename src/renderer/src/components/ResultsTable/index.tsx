@@ -10,8 +10,8 @@ import {
   type ColumnFiltersState,
   type ColumnSizingState
 } from '@tanstack/react-table'
-import { ArrowUp, ArrowDown, Download, Filter, Maximize2, RefreshCw, Edit2, Check, X, Trash2, Copy, Plus, Loader2 } from 'lucide-react'
-import type { QueryResult, ColumnInfo, DatabaseType } from '../../types'
+import { ArrowUp, ArrowDown, Download, Filter, Maximize2, RefreshCw, Edit2, Check, X, Trash2, Copy, Plus, Loader2, ExternalLink } from 'lucide-react'
+import type { QueryResult, ColumnInfo, DatabaseType, ForeignKeyInfo } from '../../types'
 import { useAppStore } from '../../store'
 
 interface Props {
@@ -480,7 +480,7 @@ export function ResultsTable({
   schema,
   onRefresh
 }: Props): React.JSX.Element {
-  const { connections } = useAppStore()
+  const { connections, openTableInTab } = useAppStore()
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
@@ -492,6 +492,7 @@ export function ResultsTable({
 
   // Inline editing state
   const [pkColumns, setPkColumns] = useState<ColumnInfo[]>([])
+  const [foreignKeys, setForeignKeys] = useState<ForeignKeyInfo[]>([])
   const [editingCell, setEditingCell] = useState<{ rowIdx: number; col: string; original: unknown } | null>(null)
   const [editValue, setEditValue] = useState('')
   const [pendingUpdate, setPendingUpdate] = useState<{ sql: string; row: Record<string, unknown> } | null>(null)
@@ -544,14 +545,25 @@ export function ResultsTable({
   const conn = connectionId ? connections.find((c) => c.id === connectionId) : null
   const canEdit = !!(connectionId && tableName && conn)
 
-  // Load PK columns when in table mode
+  // Load PK columns and Foreign Keys when in table mode
   useEffect(() => {
-    if (!canEdit || !connectionId || !tableName) return
+    if (!connectionId || !tableName) {
+      setPkColumns([])
+      setForeignKeys([])
+      return
+    }
     const qualifiedTableName = schema ? `${schema}.${tableName}` : tableName
+    
+    // Fetch Columns
     window.db.getColumns(connectionId, qualifiedTableName, database).then((cols) => {
       setPkColumns(cols.filter((c) => c.primaryKey))
     }).catch(() => setPkColumns([]))
-  }, [canEdit, connectionId, tableName, database, schema])
+
+    // Fetch FKs
+    window.db.getForeignKeys(connectionId, qualifiedTableName, database).then((fks) => {
+      setForeignKeys(fks)
+    }).catch(() => setForeignKeys([]))
+  }, [connectionId, tableName, database, schema])
 
   // Focus edit input when editing starts
   useEffect(() => {
@@ -868,6 +880,8 @@ export function ResultsTable({
   }
 
   const renderEditableCell = (rowIdx: number, colName: string, value: unknown, rowOriginal: Record<string, unknown> & { _tempId?: string }) => {
+    const fk = foreignKeys.find(f => f.columnName === colName)
+
     if (rowOriginal._tempId === addingRowId) {
       return (
         <input
@@ -920,13 +934,35 @@ export function ResultsTable({
     }
 
     return (
-      <span
-        onDoubleClick={canEdit ? () => handleCellDoubleClick(rowIdx, colName, value) : undefined}
-        style={canEdit ? { cursor: 'text', display: 'block' } : undefined}
-        title={canEdit ? 'Double-click to edit' : undefined}
-      >
-        <CellDisplay value={value} onExpand={(val) => { setExpandedValue(val); setShowViewer(true) }} />
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', minWidth: 0 }}>
+        <span
+          onDoubleClick={canEdit ? () => handleCellDoubleClick(rowIdx, colName, value) : undefined}
+          style={{ cursor: canEdit ? 'text' : 'default', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+          title={canEdit ? 'Double-click to edit' : undefined}
+        >
+          <CellDisplay value={value} onExpand={(val) => { setExpandedValue(val); setShowViewer(true) }} />
+        </span>
+        {fk && value !== null && value !== undefined && (
+          <button
+            className="cell-action-btn"
+            style={{ color: 'var(--accent)', borderColor: 'rgba(124, 58, 237, 0.2)', padding: '2px 4px', flexShrink: 0 }}
+            onClick={(e) => {
+              e.stopPropagation()
+              // Handle referencedTable which might be schema-qualified "schema.table"
+              const parts = fk.referencedTable.split('.')
+              const refSchema = parts.length > 1 ? parts[0] : schema
+              const refTable = parts.length > 1 ? parts[1] : parts[0]
+              void openTableInTab(connectionId!, refTable, database!, refSchema, {
+                column: fk.referencedColumn,
+                value
+              })
+            }}
+            title={`Follow FK: ${fk.referencedTable}.${fk.referencedColumn}`}
+          >
+            <ExternalLink size={10} />
+          </button>
+        )}
+      </div>
     )
   }
 

@@ -71,6 +71,15 @@ export interface QueryTab {
   schema?: string
 }
 
+export interface ForeignKeyInfo {
+  /** The FK column on this table */
+  columnName: string
+  /** The referenced table (may be schema-qualified) */
+  referencedTable: string
+  /** The referenced column */
+  referencedColumn: string
+}
+
 export interface SavedQuery {
   id: string
   name: string
