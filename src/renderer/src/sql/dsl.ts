@@ -34,6 +34,7 @@ class SelectBuilder {
   private readonly clauses: string[] = []
   private readonly dbType: DatabaseType
   private limitValue?: number
+  private whereClause?: { column: string; value: unknown }
 
   constructor(dbType: DatabaseType) {
     this.dbType = dbType
@@ -50,6 +51,11 @@ class SelectBuilder {
     return this
   }
 
+  where(column: string, value: unknown): SelectBuilder {
+    this.whereClause = { column, value }
+    return this
+  }
+
   limit(rows: number): SelectBuilder {
     this.limitValue = rows
     return this
@@ -57,6 +63,21 @@ class SelectBuilder {
 
   build(): string {
     if (this.clauses.length === 0) return ''
+
+    if (this.whereClause) {
+      const q = (name: string) => quoteIdentifier(name, this.dbType)
+      const v = (val: unknown) => {
+        if (val === null || val === undefined) return 'NULL'
+        if (typeof val === 'number' || typeof val === 'bigint') return String(val)
+        if (typeof val === 'boolean') {
+          if (this.dbType === 'mssql') return val ? '1' : '0'
+          return val ? 'TRUE' : 'FALSE'
+        }
+        return `'${String(val).replace(/'/g, "''")}'`
+      }
+      this.clauses.push(`WHERE ${q(this.whereClause.column)} = ${v(this.whereClause.value)}`)
+    }
+
     if (this.dbType === 'mssql' && this.limitValue && this.clauses[0] === 'SELECT *') {
       this.clauses[0] = `SELECT TOP ${this.limitValue} *`
       return `${this.clauses.join(' ')};`
@@ -72,12 +93,16 @@ export function buildSelectTableSql(
   dbType: DatabaseType,
   tableName: string,
   schemaOrDatabase: string | undefined,
-  limit: number
+  limit: number,
+  filter?: { column: string; value: unknown }
 ): string {
   if (dbType === 'mongodb') {
-    return `db.${tableName}.find({}).limit(${limit})`
+    const query = filter ? { [filter.column]: filter.value } : {}
+    return `db.${tableName}.find(${JSON.stringify(query)}).limit(${limit})`
   }
-  return new SelectBuilder(dbType).all().from(tableName, schemaOrDatabase).limit(limit).build()
+  const builder = new SelectBuilder(dbType).all().from(tableName, schemaOrDatabase).limit(limit)
+  if (filter) builder.where(filter.column, filter.value)
+  return builder.build()
 }
 
 /**

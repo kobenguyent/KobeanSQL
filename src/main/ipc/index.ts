@@ -185,6 +185,14 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     }
   )
 
+  // Get foreign keys for a table
+  handleWithLogging(
+    'db:get-fks',
+    async (_event: IpcMainInvokeEvent, connectionId: string, table: string, database?: string) => {
+      return manager.getForeignKeys(connectionId, table, database)
+    }
+  )
+
   // Get full database schema (tables + columns + FK relationships) for the visualizer
   handleWithLogging(
     'db:get-schema',

@@ -74,6 +74,7 @@ declare global {
       getDatabases(connectionId: string): Promise<string[]>
       getTables(connectionId: string, database?: string): Promise<TableInfo[]>
       getColumns(connectionId: string, table: string, database?: string): Promise<ColumnInfo[]>
+      getForeignKeys(connectionId: string, table: string, database?: string): Promise<ForeignKeyInfo[]>
       getSchema(connectionId: string, database?: string): Promise<DatabaseSchema>
       getProcedures(connectionId: string, database?: string): Promise<ProcedureInfo[]>
       exportConnections(includePasswords?: boolean): Promise<{
@@ -248,7 +249,7 @@ interface AppState {
   updateTabConnection(tabId: string, connectionId: string): void
   runQuery(tabId: string): Promise<void>
   insertSnippet(tabId: string, snippet: string): void
-  openTableInTab(connectionId: string, tableName: string, database: string, schema?: string): Promise<void>
+  openTableInTab(connectionId: string, tableName: string, database: string, schema?: string, filter?: { column: string; value: unknown }): Promise<void>
   openProcedureInTab(connectionId: string, proc: ProcedureInfo): void
 
   // Saved query actions
@@ -672,17 +673,18 @@ export const useAppStore = create<AppState>()(
       })
     },
 
-    openTableInTab: async (connectionId, tableName, database, schema) => {
+    openTableInTab: async (connectionId, tableName, database, schema, filter) => {
       const conn = get().connections.find((c) => c.id === connectionId)
       const dbType: DatabaseType = conn?.type ?? 'postgres'
       const qualifier = schema ?? database
       const { settings } = get()
       const limit = settings.queryLimit || 100
-      const sql = buildSelectTableSql(dbType, tableName, qualifier, limit)
+      const sql = buildSelectTableSql(dbType, tableName, qualifier, limit, filter)
       const id = genId()
+      const tabTitle = filter ? `${tableName} (${filter.column}=${filter.value})` : tableName
       const tab: QueryTab = {
         id,
-        title: tableName,
+        title: tabTitle,
         tabType: 'table',
         connectionId,
         sql,

@@ -149,18 +149,20 @@ const dbAPI = {
   isConnected: (id: string): Promise<boolean> => ipcRenderer.invoke('db:is-connected', id),
   query: (connectionId: string, sql: string, params?: unknown[]): Promise<QueryResult> =>
     ipcRenderer.invoke('db:query', connectionId, sql, params),
-  deleteRow: (tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean> =>
-    ipcRenderer.invoke('db:delete-row', tableName, primaryKeyObject),
   insertRow: (tableName: string, rowData: Record<string, unknown>): Promise<boolean> =>
     ipcRenderer.invoke('db:insert-row', tableName, rowData),
   duplicateRow: (tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean> =>
     ipcRenderer.invoke('db:duplicate-row', tableName, primaryKeyObject),
+  deleteRow: (tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean> =>
+    ipcRenderer.invoke('db:delete-row', tableName, primaryKeyObject),
   getDatabases: (connectionId: string): Promise<string[]> =>
     ipcRenderer.invoke('db:get-databases', connectionId),
   getTables: (connectionId: string, database?: string): Promise<TableInfo[]> =>
     ipcRenderer.invoke('db:get-tables', connectionId, database),
   getColumns: (connectionId: string, table: string, database?: string): Promise<ColumnInfo[]> =>
     ipcRenderer.invoke('db:get-columns', connectionId, table, database),
+  getForeignKeys: (connectionId: string, table: string, database?: string): Promise<ForeignKeyInfo[]> =>
+    ipcRenderer.invoke('db:get-fks', connectionId, table, database),
   getSchema: (connectionId: string, database?: string): Promise<DatabaseSchema> =>
     ipcRenderer.invoke('db:get-schema', connectionId, database),
   getProcedures: (connectionId: string, database?: string): Promise<ProcedureInfo[]> =>

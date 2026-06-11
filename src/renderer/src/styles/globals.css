@@ -2323,3 +2323,32 @@ tr.row-selected .row-num-td .row-num-label { opacity: 0; }
 .theme-cyberpunk .cm-editor .cm-atom                    { color: #ff80ff !important; }
 .theme-cyberpunk .cm-editor .cm-def                     { color: #ccaaff !important; }
 .theme-cyberpunk .cm-editor .cm-property                { color: #00ffff !important; }
+
+/* ── Tab Grouping & FK Navigation ─────────────────────────── */
+.tab-auto-grouped {
+  opacity: 0.95;
+}
+
+.tab-group-chip-auto {
+  background: rgba(var(--accent-rgb), 0.05) !important;
+  border-style: dashed !important;
+  padding-left: 6px !important;
+}
+
+.tab-auto-grouped.active {
+  opacity: 1;
+}
+
+.cell-action-btn:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: var(--accent);
+}
+
+.cell-action-btn svg {
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.cell-action-btn:hover svg {
+  opacity: 1;
+}
