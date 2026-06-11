@@ -1,3 +1,10 @@
+# [1.23.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.22.0...v1.23.0) (2026-06-11)
+
+
+### Features
+
+* FK navigations ([bbb9aff](https://github.com/kobenguyent/KobeanSQL/commit/bbb9aff523fe1b43f014888d9c3641857d59c304))
+
 # [1.22.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.21.0...v1.22.0) (2026-06-11)
 
 
