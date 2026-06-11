@@ -1,3 +1,10 @@
+## [1.23.1](https://github.com/kobenguyent/KobeanSQL/compare/v1.23.0...v1.23.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* fk navigation ([#61](https://github.com/kobenguyent/KobeanSQL/issues/61)) ([c004d8b](https://github.com/kobenguyent/KobeanSQL/commit/c004d8bcaa5ce99e8c42878e7687543b6904cdf4))
+
 # [1.23.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.22.0...v1.23.0) (2026-06-11)
 
 
