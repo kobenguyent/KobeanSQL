@@ -1,3 +1,10 @@
+# [1.19.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.18.0...v1.19.0) (2026-06-11)
+
+
+### Features
+
+* more actions to db tableview ([#58](https://github.com/kobenguyent/KobeanSQL/issues/58)) ([696cebb](https://github.com/kobenguyent/KobeanSQL/commit/696cebb651b1b2bb635347aa60a92cbf88681a62))
+
 # [1.18.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.17.0...v1.18.0) (2026-06-02)
 
 
