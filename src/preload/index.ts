@@ -149,6 +149,12 @@ const dbAPI = {
   isConnected: (id: string): Promise<boolean> => ipcRenderer.invoke('db:is-connected', id),
   query: (connectionId: string, sql: string, params?: unknown[]): Promise<QueryResult> =>
     ipcRenderer.invoke('db:query', connectionId, sql, params),
+  deleteRow: (tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean> =>
+    ipcRenderer.invoke('db:delete-row', tableName, primaryKeyObject),
+  insertRow: (tableName: string, rowData: Record<string, unknown>): Promise<boolean> =>
+    ipcRenderer.invoke('db:insert-row', tableName, rowData),
+  duplicateRow: (tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean> =>
+    ipcRenderer.invoke('db:duplicate-row', tableName, primaryKeyObject),
   getDatabases: (connectionId: string): Promise<string[]> =>
     ipcRenderer.invoke('db:get-databases', connectionId),
   getTables: (connectionId: string, database?: string): Promise<TableInfo[]> =>

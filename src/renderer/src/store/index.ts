@@ -68,6 +68,9 @@ declare global {
       disconnect(id: string): Promise<{ success: boolean }>
       isConnected(id: string): Promise<boolean>
       query(connectionId: string, sql: string, params?: unknown[]): Promise<QueryResult>
+      deleteRow(tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean>
+      insertRow(tableName: string, rowData: Record<string, unknown>): Promise<boolean>
+      duplicateRow(tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean>
       getDatabases(connectionId: string): Promise<string[]>
       getTables(connectionId: string, database?: string): Promise<TableInfo[]>
       getColumns(connectionId: string, table: string, database?: string): Promise<ColumnInfo[]>
