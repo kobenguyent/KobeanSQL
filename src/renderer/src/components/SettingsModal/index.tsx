@@ -11,7 +11,7 @@ interface Props {
 }
 
 export function SettingsModal({ onClose }: Props): React.JSX.Element {
-  const { settings, loadSettings, theme, setTheme } = useAppStore()
+  const { settings, loadSettings, updateSettings, theme, setTheme } = useAppStore()
   const themeClass = useThemeClass()
   const { t } = useTranslation()
   const [queryLimit, setQueryLimit] = useState(String(settings.queryLimit))
@@ -92,19 +92,24 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
     }
     setSaving(true)
     setError(null)
-    await updateSettings({
-      queryLimit: limit,
-      language,
-      updates: {
-        ...settings.updates,
-        autoCheckEnabled,
-        checkIntervalHours: interval
-      },
-      ai: aiModel ? { provider: aiProvider, baseUrl: aiBaseUrl, model: aiModel } : settings.ai
-    })
-    hasSavedRef.current = true
-    setSaving(false)
-    onClose()
+    try {
+      await updateSettings({
+        queryLimit: limit,
+        language,
+        updates: {
+          ...settings.updates,
+          autoCheckEnabled,
+          checkIntervalHours: interval
+        },
+        ai: aiModel ? { provider: aiProvider, baseUrl: aiBaseUrl, model: aiModel } : settings.ai
+      })
+      hasSavedRef.current = true
+      onClose()
+    } catch (err) {
+      setError((err as Error).message || 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
   }
 
   // Guard against non-DOM render environments; the modal is only meaningful in renderer.
@@ -189,8 +194,7 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
 </div>
 
 <div style={{ 
-  display: 'flex', 
-...
+            display: 'flex',
             alignItems: 'center', 
             gap: 8, 
             padding: '8px 10px', 
