@@ -19,7 +19,7 @@
     "install:dev": "npm install --ignore-scripts && npm run rebuild:sqlite",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e:visualizer": "npm run build && playwright test tests/database-visualizer.spec.ts",
+    "test:e2e:visualizer": "npm run build && xvfb-run -a playwright test tests/database-visualizer.spec.ts",
     "test:e2e:visualizer:update": "npm run build && xvfb-run -a playwright test tests/database-visualizer.spec.ts --update-snapshots",
     "docs:sync:check": "node scripts/check-docs-sync.mjs"
   },
