@@ -1,3 +1,10 @@
+## [1.25.1](https://github.com/kobenguyent/KobeanSQL/compare/v1.25.0...v1.25.1) (2026-06-12)
+
+
+### Bug Fixes
+
+* failed tests ([f9da1e3](https://github.com/kobenguyent/KobeanSQL/commit/f9da1e351e8537e0e430a05b5bf27ca2fadbccf9))
+
 # [1.25.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.24.0...v1.25.0) (2026-06-12)
 
 
