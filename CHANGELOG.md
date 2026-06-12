@@ -1,3 +1,10 @@
+# [1.24.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.23.2...v1.24.0) (2026-06-12)
+
+
+### Features
+
+* several changes ([458a7aa](https://github.com/kobenguyent/KobeanSQL/commit/458a7aadb44d87cc961aa1b6b862ed9776c01d61))
+
 ## [1.23.2](https://github.com/kobenguyent/KobeanSQL/compare/v1.23.1...v1.23.2) (2026-06-12)
 
 

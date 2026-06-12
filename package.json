@@ -1,6 +1,6 @@
 {
   "name": "kobeansql",
-  "version": "1.23.2",
+  "version": "1.24.0",
   "description": "A modern SQL database client with Apple glassmorphism UI",
   "main": "out/main/index.js",
   "author": {
