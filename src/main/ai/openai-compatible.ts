@@ -102,8 +102,9 @@ export class OpenAICompatibleService implements LocalAIService {
 
   private buildMessages(request: AIRequest): Array<{ role: 'system' | 'user'; content: string }> | null {
     const dbType = request.dbType ?? 'sql'
+    const schema = request.schemaContext ? `\nSCHEMA CONTEXT (use these table and column names):\n${request.schemaContext}` : ''
     const systemPolicy =
-      'KobeanSQL policy: local AI only, no telemetry, no cloud providers. Respond in plain text without markdown.'
+      `You are a senior SQL database expert. KobeanSQL policy: local AI only, no telemetry, no cloud providers. Respond in plain text without markdown. ${schema}`
     switch (request.task) {
       case 'generate':
         if (!request.prompt?.trim()) return null
@@ -112,8 +113,8 @@ export class OpenAICompatibleService implements LocalAIService {
           {
             role: 'user',
             content: [
-              `Generate ${dbType} SQL only.`,
-              'Return SQL only without markdown fences.',
+              `Generate valid ${dbType} SQL query based on the user request.`,
+              'Return SQL only without markdown fences or explanations.',
               `User request: ${request.prompt.trim()}`
             ].join('\n')
           }

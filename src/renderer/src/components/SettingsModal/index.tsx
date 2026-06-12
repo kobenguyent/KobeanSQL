@@ -3,13 +3,16 @@ import { useAppStore } from '../../store'
 import { useTranslation } from '../../hooks/useTranslation'
 import { getSupportedLocales, setLocale, getLocale } from '../../i18n'
 import { createPortal } from 'react-dom'
+import { Shield } from 'lucide-react'
+import { useThemeClass } from '../../hooks/useThemeClass'
 
 interface Props {
   onClose: () => void
 }
 
 export function SettingsModal({ onClose }: Props): React.JSX.Element {
-  const { settings, updateSettings } = useAppStore()
+  const { settings, loadSettings, theme, setTheme } = useAppStore()
+  const themeClass = useThemeClass()
   const { t } = useTranslation()
   const [queryLimit, setQueryLimit] = useState(String(settings.queryLimit))
   const [autoCheckEnabled, setAutoCheckEnabled] = useState(settings.updates.autoCheckEnabled)
@@ -110,7 +113,7 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
   }
 
   return createPortal(
-    <div className="modal-overlay" onClick={handleClose}>
+    <div className={`modal-overlay ${themeClass}`} onClick={handleClose}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
         <div className="modal-header">
           <span className="modal-title">{t('settings.title')}</span>
@@ -178,8 +181,30 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
               <option value="168">Every 7 days</option>
             </select>
           </div>
+<hr style={{ border: 'none', borderTop: '1px solid var(--border-subtle)', margin: '12px 0' }} />
 
-          <hr style={{ border: 'none', borderTop: '1px solid var(--border-subtle)', margin: '12px 0' }} />
+<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+   <Shield size={14} style={{ color: 'var(--accent)' }} />
+   <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: 'var(--text-primary)' }}>Local AI Assistant</span>
+</div>
+
+<div style={{ 
+  display: 'flex', 
+...
+            alignItems: 'center', 
+            gap: 8, 
+            padding: '8px 10px', 
+            background: 'rgba(74, 222, 128, 0.08)', 
+            border: '1px solid rgba(74, 222, 128, 0.2)', 
+            borderRadius: 'var(--radius-sm)',
+            marginBottom: 16
+          }}>
+            <Shield size={16} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+              <strong style={{ color: 'var(--text-primary)' }}>Local-Only AI Policy:</strong> KobeanSQL never sends your SQL, table names, or prompts to the cloud. All AI tasks run on your local machine.
+            </div>
+          </div>
+
           <div className="form-group">
             <label className="form-label">{t('settings.aiProvider')}</label>
             <select

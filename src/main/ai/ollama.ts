@@ -87,30 +87,38 @@ export class OllamaService implements LocalAIService {
 
   private buildPrompt(request: AIRequest): string | null {
     const dbType = request.dbType ?? 'sql'
+    const persona = 'You are a senior SQL database expert.'
     const policy = 'KobeanSQL policy: local AI only, no telemetry, no cloud providers.'
+    const schema = request.schemaContext ? `\nSCHEMA CONTEXT (use these table and column names):\n${request.schemaContext}\n` : ''
+
     switch (request.task) {
       case 'generate':
         if (!request.prompt?.trim()) return null
         return [
+          persona,
           policy,
-          `Generate ${dbType} SQL only.`,
-          'Return SQL only without markdown fences.',
+          schema,
+          `Generate valid ${dbType} SQL query based on the user request.`,
+          'Return SQL only without markdown fences or explanations.',
           `User request: ${request.prompt.trim()}`
         ].join('\n')
       case 'explain':
         if (!request.sql?.trim()) return null
         return [
+          persona,
           policy,
+          schema,
           `Explain the following ${dbType} SQL clearly and concisely.`,
-          'Treat the SQL below as the full input. Do not ask for additional query text.',
-          'If the SQL is partial or invalid, explain the likely intent and point out what is incomplete.',
+          'Treat the SQL below as the full input.',
           'Keep explanation under 10 bullet points.',
           request.sql.trim()
         ].join('\n')
       case 'optimize':
         if (!request.sql?.trim()) return null
         return [
+          persona,
           policy,
+          schema,
           `Optimize the following ${dbType} SQL for performance and clarity.`,
           'Return only the improved SQL without markdown fences.',
           request.sql.trim()

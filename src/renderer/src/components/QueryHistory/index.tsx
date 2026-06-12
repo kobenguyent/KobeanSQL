@@ -3,6 +3,7 @@ import { Trash2, ExternalLink, CheckCircle, XCircle, Clock } from 'lucide-react'
 import { useAppStore } from '../../store'
 import type { QueryHistoryEntry } from '../../types'
 import {createPortal} from "react-dom";
+import { useThemeClass } from '../../hooks/useThemeClass'
 
 interface Props {
   onClose: () => void
@@ -58,6 +59,7 @@ function asSafeString(value: unknown): string {
 
 export function QueryHistoryPanel({ onClose }: Props): React.JSX.Element {
   const { queryHistory, clearHistory, openHistoryEntry } = useAppStore()
+  const themeClass = useThemeClass()
   const [filter, setFilter] = useState('')
   const [selectedEntry, setSelectedEntry] = useState<QueryHistoryEntry | null>(null)
   const entries = queryHistory.map((entry, index) => normalizeHistoryEntry(entry, index))
@@ -75,7 +77,7 @@ export function QueryHistoryPanel({ onClose }: Props): React.JSX.Element {
   }
 
   const content = (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className={`modal-overlay ${themeClass}`} onClick={onClose}>
       <div
         className="modal-panel"
         onClick={(e) => e.stopPropagation()}

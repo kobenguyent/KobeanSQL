@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, X, Table, Code2, FunctionSquare, Database } from 'lucide-react'
 import { useAppStore } from '../../store'
+import { useThemeClass } from '../../hooks/useThemeClass'
 import type { QueryTab } from '../../types'
 import { DB_COLORS } from '../../types'
 
@@ -29,6 +30,7 @@ export function TabBar(): React.JSX.Element {
     setTabGroup,
     setStatus
   } = useAppStore()
+  const themeClass = useThemeClass()
 
   // Process tabs to include grouping metadata
   const processedTabs = useMemo(() => {
@@ -495,7 +497,7 @@ export function TabBar(): React.JSX.Element {
       )}
 
       {groupEditor && createPortal(
-        <div className="modal-overlay" onClick={() => setGroupEditor(null)}>
+        <div className={`modal-overlay ${themeClass}`} onClick={() => setGroupEditor(null)}>
           <div className="modal-panel" style={{ width: 380, maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <span className="modal-title">Set Group Title</span>

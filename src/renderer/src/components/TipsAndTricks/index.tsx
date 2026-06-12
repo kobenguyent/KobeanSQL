@@ -1,12 +1,14 @@
 import React, { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from '../../hooks/useTranslation'
+import { Shield } from 'lucide-react'
+import { useThemeClass } from '../../hooks/useThemeClass'
 
 interface Props {
   onClose: () => void
 }
 
-type TabId = 'basics' | 'modify' | 'joins' | 'aggregation' | 'advanced'
+type TabId = 'basics' | 'modify' | 'joins' | 'aggregation' | 'advanced' | 'ai'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'basics', label: 'Basics' },
@@ -14,6 +16,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'joins', label: 'JOINs' },
   { id: 'aggregation', label: 'Aggregation' },
   { id: 'advanced', label: 'Advanced' },
+  { id: 'ai', label: 'AI' },
 ]
 
 function CodeBlock({ code }: { code: string }): React.JSX.Element {
@@ -382,8 +385,47 @@ function AdvancedTab(): React.JSX.Element {
   )
 }
 
+function AITab(): React.JSX.Element {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 10, 
+        padding: '12px 14px', 
+        background: 'rgba(74, 222, 128, 0.08)', 
+        border: '1px solid rgba(74, 222, 128, 0.2)', 
+        borderRadius: 'var(--radius-sm)',
+        marginBottom: 4
+      }}>
+        <Shield size={20} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
+        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          <strong style={{ color: 'var(--text-primary)' }}>Privacy-First Local AI:</strong> KobeanSQL's AI features are strictly local-only. Prompts and SQL are sent only to your configured local provider (Ollama or OpenAI-compatible). No data ever leaves your machine.
+        </div>
+      </div>
+      <Tip
+        title="AI Generate – Turn text into SQL"
+        description="Describe what you need in plain English, and the local model will generate the SQL for you. Use the Message icon in the toolbar."
+      />
+      <Tip
+        title="AI Explain – Understand complex queries"
+        description="Paste a complex query and ask the local AI to explain its logic step-by-step. Use the Robot icon in the toolbar."
+      />
+      <Tip
+        title="AI Optimize – Improve performance"
+        description="Submit your SQL to the local AI to receive an optimized version with better performance or readability. Use the Sparkles icon in the toolbar."
+      />
+      <Tip
+        title="Setup local providers"
+        description="To use AI features, ensure Ollama or LM Studio (OpenAI-compatible) is running locally. Configure the base URL and model in Settings."
+      />
+    </div>
+  )
+}
+
 export function TipsAndTricksModal({ onClose }: Props): React.JSX.Element {
   const { t } = useTranslation()
+  const themeClass = useThemeClass()
   const [activeTab, setActiveTab] = useState<TabId>('basics')
 
   if (typeof document === 'undefined' || !document.body) {
@@ -396,10 +438,11 @@ export function TipsAndTricksModal({ onClose }: Props): React.JSX.Element {
     joins: <JoinsTab />,
     aggregation: <AggregationTab />,
     advanced: <AdvancedTab />,
+    ai: <AITab />,
   }
 
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
+    <div className={`modal-overlay ${themeClass}`} onClick={onClose}>
       <div
         className="modal-panel"
         onClick={(e) => e.stopPropagation()}

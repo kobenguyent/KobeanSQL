@@ -197,12 +197,14 @@ export default function App(): React.JSX.Element {
     typeof document !== 'undefined'
       ? document.body ?? document.getElementById('root')
       : null
+  const themeClass = isLightTheme ? 'theme-light' : THEME_CLASS[theme] || ''
+
   const renderPortal = (node: React.ReactNode): React.ReactNode => {
-    return portalTarget ? createPortal(node, portalTarget) : node
+    return portalTarget ? createPortal(<div className={themeClass}>{node}</div>, portalTarget) : node
   }
 
   const renderModalRecoveryFallback = (panelName: string) => (error: Error | null) => (
-    <div className="modal-overlay">
+    <div className={`modal-overlay ${themeClass}`}>
       <div className="modal-panel" style={{ maxWidth: 540 }}>
         <div className="modal-header">
           <span className="modal-title">{panelName} crashed</span>
@@ -382,8 +384,8 @@ export default function App(): React.JSX.Element {
                 <KobeanLogo className="welcome-logo" />
                 <div className="welcome-title">Welcome to KobeanSQL</div>
                 <div className="welcome-sub">
-                  A modern SQL client with a beautiful glassmorphism interface.
-                  Connect to MySQL, PostgreSQL, SQLite, or SQL Server.
+                  A modern SQL client with a beautiful glassmorphism interface and local-only AI.
+                  Connect to MySQL, PostgreSQL, SQLite, or SQL Server safely.
                 </div>
                 <button className="btn btn-primary" onClick={() => handleOpenModal()}>
                   <Database size={14} /> New Connection
@@ -398,6 +400,24 @@ export default function App(): React.JSX.Element {
       <div className="statusbar">
         <span className={`statusbar-msg ${statusType}`}>
           {statusMessage}
+        </span>
+        {/* Local AI indicator */}
+        <span
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            color: 'var(--color-success)',
+            fontSize: 'var(--font-size-xs)',
+            fontWeight: 500,
+            background: 'rgba(74, 222, 128, 0.1)',
+            padding: '1px 6px',
+            borderRadius: 4,
+            border: '1px solid rgba(74, 222, 128, 0.2)'
+          }}
+          title="AI features are strictly local-only (Ollama / OpenAI-compat)"
+        >
+          <Shield size={10} /> Local AI
         </span>
         {/* Active connection info */}
         {(() => {

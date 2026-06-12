@@ -10,9 +10,24 @@ import {
   type ColumnFiltersState,
   type ColumnSizingState
 } from '@tanstack/react-table'
-import { ArrowUp, ArrowDown, Download, Filter, Maximize2, RefreshCw, Edit2, Check, X, Trash2, Copy, Plus, Loader2, ExternalLink } from 'lucide-react'
+import {
+  Download,
+  Filter,
+  Maximize2,
+  RefreshCw,
+  Edit2,
+  Check,
+  X,
+  Trash2,
+  Copy,
+  Plus,
+  Loader2,
+  ExternalLink,
+  ArrowUp, ArrowDown
+} from 'lucide-react'
 import type { QueryResult, ColumnInfo, DatabaseType, ForeignKeyInfo } from '../../types'
 import { useAppStore } from '../../store'
+import { useThemeClass } from '../../hooks/useThemeClass'
 
 interface Props {
   result: QueryResult
@@ -245,6 +260,7 @@ function CellViewerModal({
   onClose: () => void
 }): React.JSX.Element {
   const str = formatCell(value)
+  const themeClass = useThemeClass()
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState<string | null>(null)
   const copy = () => {
@@ -257,7 +273,7 @@ function CellViewerModal({
     })
   }
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
+    <div className={`modal-overlay ${themeClass}`} onClick={onClose}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600 }}>
         <div className="modal-header">
           <span className="modal-title">Cell Value</span>
@@ -312,8 +328,9 @@ function EditConfirmModal({
   error: string | null
   isUpdating: boolean
 }): React.JSX.Element {
+  const themeClass = useThemeClass()
   return createPortal(
-    <div className="modal-overlay" onClick={onCancel}>
+    <div className={`modal-overlay ${themeClass}`} onClick={onCancel}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
         <div className="modal-header">
           <span className="modal-title">Confirm Update</span>
@@ -380,6 +397,7 @@ function ContextMenu({
   onClose: () => void
 }): React.JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
+  const themeClass = useThemeClass()
 
   // Reposition if the menu would overflow the viewport
   const style = useMemo(() => {
@@ -396,7 +414,7 @@ function ContextMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="ctx-menu"
+      className={`ctx-menu ${themeClass}`}
       style={style}
       onClick={(e) => e.stopPropagation()}
     >
@@ -442,8 +460,9 @@ function DeleteConfirmModal({
 }): React.JSX.Element {
   const preview = sqls.slice(0, 3).join('\n')
   const hasMore = sqls.length > 3
+  const themeClass = useThemeClass()
   return createPortal(
-    <div className="modal-overlay" onClick={onCancel}>
+    <div className={`modal-overlay ${themeClass}`} onClick={onCancel}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
         <div className="modal-header">
           <span className="modal-title">Confirm Deletion</span>
@@ -1094,7 +1113,7 @@ export function ResultsTable({
 
       return baseCols
     },
-    [result.columns, editingCell, editValue, canEdit, pkColumns, schema, database, tableName, conn?.type, addingRowId, addingRowData, savingRowIds]
+    [result.columns, localRows, editingCell, editValue, canEdit, pkColumns, foreignKeys, schema, database, tableName, conn?.type, addingRowId, addingRowData, savingRowIds, openTableInTab]
   )
 
   const table = useReactTable({

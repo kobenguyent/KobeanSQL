@@ -7,6 +7,7 @@ import { Play, StopCircle, Save, Wand2, Sparkles, Bot, X, MessageSquarePlus, Cod
 import { useAppStore } from '../../store'
 import { useIsLightTheme } from '../../hooks/useIsLightTheme'
 import { useTranslation } from '../../hooks/useTranslation'
+import { useThemeClass } from '../../hooks/useThemeClass'
 import type { DatabaseType, QueryTab } from '../../types'
 import { format } from 'sql-formatter'
 import { buildProcedureCallSql, buildSelectTableSql } from '../../sql/dsl'
@@ -24,7 +25,6 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
     schema,
     settings,
     updateTabSql,
-    updateTabConnection,
     runQuery,
     insertSnippet,
     saveCurrentQuery,
@@ -32,6 +32,7 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
   } =
     useAppStore()
   const isLightTheme = useIsLightTheme()
+  const themeClass = useThemeClass()
   const { t } = useTranslation()
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [saveName, setSaveName] = useState('')
@@ -69,6 +70,7 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
 
   const aiProviderName =
     aiSettings?.provider === 'openai-compatible' ? 'OpenAI-compatible local provider' : 'Ollama'
+
   const activeConnection = useMemo(
     () => connections.find((connection) => connection.id === tab.connectionId),
     [connections, tab.connectionId]
@@ -244,6 +246,23 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
         return
       }
 
+      // Compact schema context for local AI
+      let schemaContext = ''
+      if (tab.connectionId && schema[tab.connectionId]) {
+        const node = schema[tab.connectionId]
+        const tableLines = []
+        for (const [dbName, tables] of Object.entries(node.tables)) {
+          for (const t of tables) {
+            const tableKey = t.schema ? `${t.schema}.${t.name}` : t.name
+            const columns = (node.columns[`${dbName}.${tableKey}`] || node.columns[tableKey] || [])
+              .map((c) => `${c.name} (${c.type}${c.primaryKey ? ' PK' : ''})`)
+              .join(', ')
+            tableLines.push(`${tableKey}: ${columns}`)
+          }
+        }
+        schemaContext = tableLines.join('\n')
+      }
+
       let response: { success: boolean; output?: string; error?: string }
       setAiBusyTask(task)
       try {
@@ -251,7 +270,8 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
           task,
           prompt: generatePrompt?.trim(),
           sql: task === 'generate' ? undefined : tab.sql,
-          dbType
+          dbType,
+          schemaContext: schemaContext || undefined
         })
       } catch (error) {
         setStatus(`AI ${task} failed: ${error instanceof Error ? error.message : String(error)}`, 'error')
@@ -280,25 +300,12 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Toolbar */}
       <div className="editor-toolbar">
-        {/* Connection selector */}
-        <select
-          className="editor-connection-select"
-          value={tab.connectionId ?? ''}
-          onChange={(e) => updateTabConnection(tab.id, e.target.value)}
-        >
-          <option value="" disabled>{t('editor.selectConnection')}</option>
-          {connections.map((conn) => (
-            <option key={conn.id} value={conn.id} disabled={!connectedIds.has(conn.id)}>
-              {connectedIds.has(conn.id) ? '● ' : '○ '}{conn.name}
-            </option>
-          ))}
-        </select>
-
         {/* Run button */}
         <button
           className={`run-btn ${tab.isRunning ? 'running' : ''}`}
           onClick={handleRunQuery}
           disabled={!tab.connectionId || !connectedIds.has(tab.connectionId ?? '')}
+          style={{ marginLeft: 0 }}
         >
           {tab.isRunning ? (
             <><StopCircle size={13} /> {t('editor.running')}</>
@@ -332,7 +339,7 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
           className="icon-btn"
           onClick={() => setShowAIGenerateModal(true)}
           disabled={aiBusyTask !== null}
-          data-tooltip={`${t('editor.aiGenerate')} (${aiProviderName})`}
+          data-tooltip={`Local AI Generate (${aiProviderName})`}
         >
           <MessageSquarePlus size={13} />
         </button>
@@ -340,7 +347,7 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
           className="icon-btn"
           onClick={() => runAiTask('explain')}
           disabled={aiBusyTask !== null || !tab.sql.trim()}
-          data-tooltip={`${t('editor.aiExplain')} (${aiProviderName})`}
+          data-tooltip={`Local AI Explain (${aiProviderName})`}
         >
           <Bot size={13} />
         </button>
@@ -348,7 +355,7 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
           className="icon-btn"
           onClick={() => runAiTask('optimize')}
           disabled={aiBusyTask !== null || !tab.sql.trim()}
-          data-tooltip={`${t('editor.aiOptimize')} (${aiProviderName})`}
+          data-tooltip={`Local AI Optimize (${aiProviderName})`}
         >
           <Sparkles size={13} />
         </button>
@@ -359,8 +366,8 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
         <span className="keyboard-hint">
           <kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</kbd> + <kbd>S</kbd>
         </span>
-        <span className="keyboard-hint" style={{ color: 'var(--text-tertiary)' }}>
-          AI: local-only ({aiProviderName})
+        <span className="keyboard-hint" style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Shield size={11} /> Local AI ({aiProviderName})
         </span>
       </div>
 
@@ -548,10 +555,10 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
       )}
 
       {showAIGenerateModal && createPortal(
-        <div className="modal-overlay" onClick={() => setShowAIGenerateModal(false)}>
+        <div className={`modal-overlay ${themeClass}`} onClick={() => setShowAIGenerateModal(false)}>
           <div className="modal-panel" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">{t('editor.aiGenerate')} ({aiProviderName})</span>
+              <span className="modal-title">Local AI Generate ({aiProviderName})</span>
               <button className="icon-btn" onClick={() => setShowAIGenerateModal(false)}>
                 <X size={15} />
               </button>

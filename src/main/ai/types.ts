@@ -7,6 +7,7 @@ export interface AIRequest {
   prompt?: string
   sql?: string
   dbType?: string
+  schemaContext?: string
 }
 
 export interface AIResponse {
