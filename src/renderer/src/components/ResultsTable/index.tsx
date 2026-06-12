@@ -513,6 +513,7 @@ export function ResultsTable({
   // Inline editing state
   const [pkColumns, setPkColumns] = useState<ColumnInfo[]>([])
   const [foreignKeys, setForeignKeys] = useState<ForeignKeyInfo[]>([])
+  const [loadingForeignKeys, setLoadingForeignKeys] = useState(false)
   const [editingCell, setEditingCell] = useState<{ rowIdx: number; col: string; original: unknown } | null>(null)
   const [editValue, setEditValue] = useState('')
   const [pendingUpdate, setPendingUpdate] = useState<{ sql: string; row: Record<string, unknown> } | null>(null)
@@ -575,6 +576,7 @@ export function ResultsTable({
     const qualifiedTableName = schema ? `${schema}.${tableName}` : tableName
     
     // Fetch Columns
+    setLoadingForeignKeys(true)
     window.db.getColumns(connectionId, qualifiedTableName, database).then((cols) => {
       setPkColumns(cols.filter((c) => c.primaryKey))
     }).catch(() => setPkColumns([]))
@@ -582,7 +584,7 @@ export function ResultsTable({
     // Fetch FKs
     window.db.getForeignKeys(connectionId, qualifiedTableName, database).then((fks) => {
       setForeignKeys(fks)
-    }).catch(() => setForeignKeys([]))
+    }).catch(() => setForeignKeys([])).finally(() => setLoadingForeignKeys(false))
   }, [connectionId, tableName, database, schema])
 
   // Focus edit input when editing starts

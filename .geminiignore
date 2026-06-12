@@ -1,0 +1,22 @@
+# Dependencies & Build
+node_modules/
+dist/
+out/
+build/
+
+# IDE & Version Control
+.git/
+.idea/
+.DS_Store
+
+# Static Assets
+docs/assets/
+docs/screenshots/
+src/renderer/assets/brand/
+
+# Large Test Artifacts
+tests/**/*-snapshots/
+tests/**/*.png
+
+# Lock files
+package-lock.json
