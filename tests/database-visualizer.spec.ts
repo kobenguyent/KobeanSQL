@@ -126,10 +126,6 @@ test('renders users/posts/comments schema graph and captures docs screenshots', 
     await expect(newTabButton).toBeVisible()
     await newTabButton.click()
 
-    const connectionSelect = page.locator('.editor-connection-select')
-    await expect(connectionSelect).toBeVisible()
-    await connectionSelect.selectOption({ index: 1 })
-
     const contentPane = page.locator('.content-pane')
     await expect(contentPane).toBeVisible()
     await contentPane.screenshot({ path: DOCS_SCREENSHOTS.queryEditorFlow })
