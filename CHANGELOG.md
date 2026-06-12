@@ -1,3 +1,10 @@
+## [1.25.2](https://github.com/kobenguyent/KobeanSQL/compare/v1.25.1...v1.25.2) (2026-06-12)
+
+
+### Bug Fixes
+
+* cannot render query editor ([e8836ef](https://github.com/kobenguyent/KobeanSQL/commit/e8836ef120c6e8f44f17a1523303597ec51dbf3f))
+
 ## [1.25.1](https://github.com/kobenguyent/KobeanSQL/compare/v1.25.0...v1.25.1) (2026-06-12)
 
 
