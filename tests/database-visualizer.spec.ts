@@ -122,13 +122,32 @@ test('renders users/posts/comments schema graph and captures docs screenshots', 
     await expect(mainLayout).toBeVisible()
     await mainLayout.screenshot({ path: DOCS_SCREENSHOTS.mainWindow })
 
-    const newTabButton = page.locator('.tab-new-btn').first()
-    await expect(newTabButton).toBeVisible()
-    await newTabButton.click()
-
     const contentPane = page.locator('.content-pane')
     await expect(contentPane).toBeVisible()
     await contentPane.screenshot({ path: DOCS_SCREENSHOTS.queryEditorFlow })
+
+    // Wait for sidebar to load tables
+    await page.locator('.sidebar-body').getByText('Schema Visualizer E2E', { exact: true }).click()
+    await page.waitForTimeout(2000)
+
+    // Expand the 'main' database
+    await page.locator('.sidebar-body').getByText('main', { exact: true }).click()
+    await page.waitForTimeout(2000)
+
+    // Expand 'Tables (3)'
+    await page.locator('.sidebar-body').getByText('Tables (3)', { exact: true }).click()
+    await page.waitForTimeout(2000)
+
+    // Try to find the 'users' table
+    const usersItem = page.locator('.sidebar-body').getByText('users', { exact: true })
+    await expect(usersItem).toBeVisible({ timeout: 15000 })
+    await usersItem.click()
+
+    // Should open posts table
+    await expect(page.locator('.tab.active')).toContainText('users')
+
+    // Wait for data to load
+    await page.waitForTimeout(3000)
 
     await runSql(page, 'SELECT id, email, display_name FROM users ORDER BY id;')
     await contentPane.screenshot({ path: DOCS_SCREENSHOTS.queryDataFlow })

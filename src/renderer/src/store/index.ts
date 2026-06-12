@@ -108,6 +108,7 @@ declare global {
         prompt?: string
         sql?: string
         dbType?: string
+        schemaContext?: string
       }): Promise<{ success: boolean; output?: string; error?: string }>
       listAIModels(request?: {
         provider?: 'ollama' | 'openai-compatible'

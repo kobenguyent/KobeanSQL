@@ -15,7 +15,7 @@ function TabIcon({ tabType }: { tabType: 'query' | 'table' | 'procedure' | undef
   return <Code2 size={11} style={{ flexShrink: 0, opacity: 0.8 }} />
 }
 
-export function TabBar(): React.JSX.Element {
+export function TabBar(): React.JSX.Element | null {
   const {
     tabs,
     activeTabId,
