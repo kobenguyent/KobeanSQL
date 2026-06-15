@@ -198,16 +198,34 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     'db:get-schema',
     async (_event: IpcMainInvokeEvent, connectionId: string, database?: string) => {
       const tableInfos = await manager.getTables(connectionId, database)
-      const schemaRows = await Promise.all(
-        tableInfos.map(async (t) => {
-          const tableId = t.schema ? `${t.schema}.${t.name}` : t.name
-          const [columns, fks] = await Promise.all([
-            manager.getColumns(connectionId, tableId, database),
-            manager.getForeignKeys(connectionId, tableId, database)
-          ])
-          return { tableInfo: t, tableId, columns, fks }
-        })
-      )
+
+      // Safeguard: Limit the number of tables processed for the visualizer to prevent OOM/hangs
+      const MAX_SCHEMA_TABLES = 200
+      const tablesToProcess = tableInfos.slice(0, MAX_SCHEMA_TABLES)
+
+      // Safeguard: Process tables in batches to avoid overwhelming the DB server
+      const BATCH_SIZE = 10
+      const schemaRows: Array<{
+        tableInfo: typeof tableInfos[0],
+        tableId: string,
+        columns: Awaited<ReturnType<typeof manager.getColumns>>,
+        fks: Awaited<ReturnType<typeof manager.getForeignKeys>>
+      }> = []
+
+      for (let i = 0; i < tablesToProcess.length; i += BATCH_SIZE) {
+        const batch = tablesToProcess.slice(i, i + BATCH_SIZE)
+        const batchResults = await Promise.all(
+          batch.map(async (t) => {
+            const tableId = t.schema ? `${t.schema}.${t.name}` : t.name
+            const [columns, fks] = await Promise.all([
+              manager.getColumns(connectionId, tableId, database),
+              manager.getForeignKeys(connectionId, tableId, database)
+            ])
+            return { tableInfo: t, tableId, columns, fks }
+          })
+        )
+        schemaRows.push(...batchResults)
+      }
 
       const fkColumnSet = new Set<string>()
       schemaRows.forEach(({ tableId, fks }) => {
@@ -235,9 +253,14 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
         }))
       )
 
-      return { tables, relationships }
+      return {
+        tables,
+        relationships,
+        truncated: tableInfos.length > MAX_SCHEMA_TABLES
+      }
     }
   )
+
 
   // Get procedures / functions list
   handleWithLogging(

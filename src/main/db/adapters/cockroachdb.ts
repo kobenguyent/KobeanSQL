@@ -6,6 +6,7 @@ import { ConnectionConfig } from '../types'
  * This adapter reuses PostgresAdapter with CockroachDB-specific defaults.
  */
 export class CockroachDBAdapter extends PostgresAdapter {
+  dialect: ConnectionConfig['type'] = 'cockroachdb'
   async connect(config: ConnectionConfig): Promise<void> {
     await super.connect({
       ...config,

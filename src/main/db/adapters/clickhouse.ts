@@ -3,6 +3,7 @@ import { DatabaseAdapter } from '../adapter'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from '../types'
 
 export class ClickHouseAdapter implements DatabaseAdapter {
+  dialect: ConnectionConfig['type'] = 'clickhouse'
   private client: ClickHouseClient | null = null
   private config: ConnectionConfig | null = null
   private connected = false
@@ -39,34 +40,31 @@ export class ClickHouseAdapter implements DatabaseAdapter {
   async query(sql: string, _params: unknown[] = []): Promise<QueryResult> {
     if (!this.client) throw new Error('Not connected')
     const start = Date.now()
-    try {
-      const trimmed = sql.trim().toUpperCase()
-      const isSelect =
-        trimmed.startsWith('SELECT') ||
-        trimmed.startsWith('SHOW') ||
-        trimmed.startsWith('DESCRIBE') ||
-        trimmed.startsWith('EXPLAIN') ||
-        trimmed.startsWith('WITH')
-      if (isSelect) {
-        const result = await this.client.query({ query: sql, format: 'JSONCompact' })
-        const json = await result.json<ResponseJSON<unknown[]>>()
-        const meta = (json as { meta?: { name: string; type: string }[] }).meta ?? []
-        const data = (json as { data?: unknown[][] }).data ?? []
-        const columns = meta.map((m) => ({ name: m.name, type: m.type, nullable: true, primaryKey: false }))
-        const rows = data.map((row) => {
-          const record: Record<string, unknown> = {}
-          meta.forEach((m, i) => { record[m.name] = (row as unknown[])[i] })
-          return record
-        })
-        return { columns, rows, rowCount: rows.length, duration: Date.now() - start }
-      } else {
-        await this.client.command({ query: sql })
-        return { columns: [], rows: [], rowCount: 0, duration: Date.now() - start }
-      }
-    } catch (err) {
-      return { columns: [], rows: [], rowCount: 0, duration: Date.now() - start, error: (err as Error).message }
+    const trimmed = sql.trim().toUpperCase()
+    const isSelect =
+      trimmed.startsWith('SELECT') ||
+      trimmed.startsWith('SHOW') ||
+      trimmed.startsWith('DESCRIBE') ||
+      trimmed.startsWith('EXPLAIN') ||
+      trimmed.startsWith('WITH')
+    if (isSelect) {
+      const result = await this.client.query({ query: sql, format: 'JSONCompact' })
+      const json = await result.json<ResponseJSON<unknown[]>>()
+      const meta = (json as { meta?: { name: string; type: string }[] }).meta ?? []
+      const data = (json as { data?: unknown[][] }).data ?? []
+      const columns = meta.map((m) => ({ name: m.name, type: m.type, nullable: true, primaryKey: false }))
+      const rows = data.map((row) => {
+        const record: Record<string, unknown> = {}
+        meta.forEach((m, i) => { record[m.name] = (row as unknown[])[i] })
+        return record
+      })
+      return { columns, rows, rowCount: rows.length, duration: Date.now() - start }
+    } else {
+      await this.client.command({ query: sql })
+      return { columns: [], rows: [], rowCount: 0, duration: Date.now() - start }
     }
   }
+
 
   async getDatabases(): Promise<string[]> {
     const result = await this.query('SHOW DATABASES')

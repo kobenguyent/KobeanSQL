@@ -51,6 +51,7 @@ function redisValueToString(value: unknown): string {
 }
 
 export class RedisAdapter implements DatabaseAdapter {
+  dialect: ConnectionConfig['type'] = 'redis'
   private client: Redis | null = null
   private config: ConnectionConfig | null = null
   private connected = false
@@ -85,23 +86,20 @@ export class RedisAdapter implements DatabaseAdapter {
   async query(commandStr: string, _params: unknown[] = []): Promise<QueryResult> {
     if (!this.client) throw new Error('Not connected')
     const start = Date.now()
-    try {
-      const tokens = parseRedisCommand(commandStr)
-      if (tokens.length === 0) throw new Error('Empty Redis command')
-      const [cmd, ...args] = tokens
-      // ioredis call(command, ...args) executes any Redis command
-      const result = await (this.client as unknown as { call: (cmd: string, ...args: string[]) => Promise<unknown> }).call(cmd.toUpperCase(), ...args)
-      const value = redisValueToString(result)
-      return {
-        columns: [{ name: 'result', type: 'string', nullable: true, primaryKey: false }],
-        rows: [{ result: value }],
-        rowCount: 1,
-        duration: Date.now() - start
-      }
-    } catch (err) {
-      return { columns: [], rows: [], rowCount: 0, duration: Date.now() - start, error: (err as Error).message }
+    const tokens = parseRedisCommand(commandStr)
+    if (tokens.length === 0) throw new Error('Empty Redis command')
+    const [cmd, ...args] = tokens
+    // ioredis call(command, ...args) executes any Redis command
+    const result = await (this.client as unknown as { call: (cmd: string, ...args: string[]) => Promise<unknown> }).call(cmd.toUpperCase(), ...args)
+    const value = redisValueToString(result)
+    return {
+      columns: [{ name: 'result', type: 'string', nullable: true, primaryKey: false }],
+      rows: [{ result: value }],
+      rowCount: 1,
+      duration: Date.now() - start
     }
   }
+
 
   async getDatabases(): Promise<string[]> {
     // Redis databases are numbered 0–15 by default (configurable with databases directive)

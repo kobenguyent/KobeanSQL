@@ -1,45 +1,42 @@
-import mysql, { Pool, RowDataPacket, FieldPacket } from 'mysql2/promise'
+import mariadb, { Pool, PoolConnection, FieldInfo } from 'mariadb'
 import { DatabaseAdapter } from '../adapter'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from '../types'
 import { resolveConnectionConfig } from '../connection-uri'
 
-export class MySQLAdapter implements DatabaseAdapter {
-  dialect: ConnectionConfig['type'] = 'mysql'
+export class MariaDBAdapter implements DatabaseAdapter {
+  dialect: ConnectionConfig['type'] = 'mariadb'
   private pool: Pool | null = null
   private config: ConnectionConfig | null = null
   private _connected = false
-  private _onPoolError = (): void => { this._connected = false }
 
   async connect(config: ConnectionConfig): Promise<void> {
     const resolvedConfig = resolveConnectionConfig(config)
     this.config = resolvedConfig
-    this.pool = mysql.createPool({
+    this.pool = mariadb.createPool({
       host: resolvedConfig.host || 'localhost',
       port: resolvedConfig.port || 3306,
       user: resolvedConfig.user || 'root',
       password: resolvedConfig.password || '',
       database: resolvedConfig.database,
       ssl: resolvedConfig.ssl ? { rejectUnauthorized: false } : undefined,
-      multipleStatements: true,
-      connectTimeout: 10000,
-      waitForConnections: true,
       connectionLimit: 5,
-      queueLimit: 100, // Cap the queue to 100 pending queries
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10000
+      acquireTimeout: 10000,
+      connectTimeout: 10000,
+      minDelayValidation: 10000,
+      idleTimeout: 30000
     })
-
-    // Verify connectivity eagerly so errors surface at connect time
+    
+    // Verify connectivity eagerly
     const conn = await this.pool.getConnection()
+    await conn.ping()
     conn.release()
+    
     this._connected = true
-    ;(this.pool as unknown as NodeJS.EventEmitter).on('error', this._onPoolError)
   }
 
   async disconnect(): Promise<void> {
     this._connected = false
     if (this.pool) {
-      (this.pool as unknown as NodeJS.EventEmitter).off('error', this._onPoolError)
       await this.pool.end()
       this.pool = null
     }
@@ -54,22 +51,27 @@ export class MySQLAdapter implements DatabaseAdapter {
     const conn = await this.pool.getConnection()
     const start = Date.now()
     try {
-      const [rows, fields] = await conn.query<RowDataPacket[]>(sql, params)
+      // mariadb driver returns rows directly, and metadata in a separate property if requested
+      const rows = await conn.query({ sql, rowsAsArray: false }, params)
       const duration = Date.now() - start
+      
       const resultRows = Array.isArray(rows) ? rows : []
-      const rowCount = Array.isArray(rows)
-        ? resultRows.length
-        : typeof (rows as { affectedRows?: unknown }).affectedRows === 'number'
-          ? ((rows as { affectedRows: number }).affectedRows)
-          : 0
-      const columns = (fields as FieldPacket[] || []).map((f) => ({
+      const rowCount = Array.isArray(rows) ? rows.length : (rows.affectedRows || 0)
+      
+      const meta = (rows as any).meta as FieldInfo[] | undefined
+      const columns = (meta || []).map((f) => ({
         name: f.name,
         type: f.type?.toString() || 'unknown',
-        nullable: !!(f.flags && ((f.flags as number) & 1) === 0),
-        primaryKey: !!(f.flags && ((f.flags as number) & 2) !== 0)
+        nullable: true,
+        primaryKey: false
       }))
+
+      const finalColumns = columns.length === 0 && resultRows.length > 0
+        ? Object.keys(resultRows[0]).map(name => ({ name, type: 'unknown', nullable: true, primaryKey: false }))
+        : columns
+
       return {
-        columns,
+        columns: finalColumns,
         rows: resultRows as Record<string, unknown>[],
         rowCount,
         duration
@@ -169,7 +171,10 @@ export class MySQLAdapter implements DatabaseAdapter {
 
   async ping(): Promise<boolean> {
     try {
-      await this.query('SELECT 1')
+      if (!this.pool) return false
+      const conn = await this.pool.getConnection()
+      await conn.ping()
+      conn.release()
       return true
     } catch {
       return false

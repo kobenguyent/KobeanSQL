@@ -289,6 +289,14 @@ export class LocalStore {
           entry.timestamp,
           entry.error ?? null
         )
+      // Keep the table bounded
+      this.db
+        .prepare(
+          `DELETE FROM connection_logs WHERE id IN (
+             SELECT id FROM connection_logs ORDER BY timestamp DESC LIMIT -1 OFFSET 500
+           )`
+        )
+        .run()
     } catch (err) {
       appLogger.error('LocalStore.addConnectionLog failed', { error: (err as Error).message })
     }

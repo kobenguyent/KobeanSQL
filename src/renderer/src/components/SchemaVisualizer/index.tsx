@@ -127,10 +127,18 @@ export function SchemaVisualizer({ connectionId, connectionName, database, onClo
         {/* Footer stats */}
         {schema && !loading && (
           <div className="schema-visualizer-footer">
-            <span>{schema.tables.length} table{schema.tables.length !== 1 ? 's' : ''}</span>
-            <span>{schema.relationships.length} relationship{schema.relationships.length !== 1 ? 's' : ''}</span>
+            <div className="schema-stats">
+              <span>{schema.tables.length} table{schema.tables.length !== 1 ? 's' : ''}</span>
+              <span>{schema.relationships.length} relationship{schema.relationships.length !== 1 ? 's' : ''}</span>
+            </div>
+            {schema.truncated && (
+              <div className="schema-warning" title="Large database detected. Only the first 200 tables are shown for performance.">
+                Showing first 200 tables only
+              </div>
+            )}
           </div>
         )}
+
       </div>
     </div>
   )

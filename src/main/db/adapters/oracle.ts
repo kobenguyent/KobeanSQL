@@ -3,7 +3,8 @@ import { DatabaseAdapter } from '../adapter'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from '../types'
 
 export class OracleAdapter implements DatabaseAdapter {
-  private connection: oracledb.Connection | null = null
+  dialect: ConnectionConfig['type'] = 'oracle'
+  private pool: oracledb.Pool | null = null
   private config: ConnectionConfig | null = null
   private connected = false
 
@@ -12,35 +13,46 @@ export class OracleAdapter implements DatabaseAdapter {
     const connectString = config.connectionUri?.trim()
       || `${config.host || 'localhost'}:${config.port || 1521}/${config.database || 'ORCL'}`
 
-    this.connection = await oracledb.getConnection({
+    this.pool = await oracledb.createPool({
       user: config.user || '',
       password: config.password || '',
-      connectString
+      connectString,
+      poolMax: 5,
+      poolMin: 1,
+      poolTimeout: 30
     })
+    
+    // Verify connectivity
+    const conn = await this.pool.getConnection()
+    await conn.close()
+    
     this.connected = true
   }
 
   async disconnect(): Promise<void> {
-    if (this.connection) {
-      await this.connection.close()
-      this.connection = null
+    if (this.pool) {
+      await this.pool.close(0)
+      this.pool = null
     }
     this.connected = false
   }
 
   isConnected(): boolean {
-    return this.connected && this.connection !== null
+    return this.connected && this.pool !== null
   }
 
   async query(sql: string, params: unknown[] = []): Promise<QueryResult> {
-    if (!this.connection) throw new Error('Not connected')
+    if (!this.pool) throw new Error('Not connected')
     const start = Date.now()
+    let connection: oracledb.Connection | null = null
     try {
+      connection = await this.pool.getConnection()
       // Remove trailing semicolons — Oracle does not accept them in execute()
       const normalizedSql = sql.trim().replace(/;+$/, '')
-      const result = await this.connection.execute(normalizedSql, params, {
+      const result = await connection.execute(normalizedSql, params, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
-        fetchArraySize: 200
+        fetchArraySize: 200,
+        autoCommit: true
       })
       const metaData = result.metaData ?? []
       const columns = metaData.map((m) => ({
@@ -57,10 +69,14 @@ export class OracleAdapter implements DatabaseAdapter {
         rowCount: rows.length > 0 ? rows.length : rowsAffected,
         duration: Date.now() - start
       }
-    } catch (err) {
-      return { columns: [], rows: [], rowCount: 0, duration: Date.now() - start, error: (err as Error).message }
+    } finally {
+      if (connection) {
+        await connection.close().catch(() => {})
+      }
     }
   }
+
+
 
   async getDatabases(): Promise<string[]> {
     // Oracle doesn't have the concept of multiple databases per instance.

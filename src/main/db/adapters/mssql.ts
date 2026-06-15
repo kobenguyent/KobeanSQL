@@ -4,6 +4,7 @@ import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, Fo
 import { resolveConnectionConfig } from '../connection-uri'
 
 export class MSSQLAdapter implements DatabaseAdapter {
+  dialect: ConnectionConfig['type'] = 'mssql'
   private pool: mssql.ConnectionPool | null = null
   private config: ConnectionConfig | null = null
 
@@ -20,6 +21,11 @@ export class MSSQLAdapter implements DatabaseAdapter {
         encrypt: resolvedConfig.ssl ?? true,
         trustServerCertificate: true,
         connectTimeout: 10000
+      },
+      pool: {
+        max: 5,
+        min: 0,
+        idleTimeoutMillis: 30000
       }
     })
   }
@@ -38,9 +44,9 @@ export class MSSQLAdapter implements DatabaseAdapter {
   async query(sql: string, params: unknown[] = []): Promise<QueryResult> {
     if (!this.pool) throw new Error('Not connected')
     const start = Date.now()
+    const request = this.pool.request()
+    params.forEach((p, i) => request.input(`p${i}`, p))
     try {
-      const request = this.pool.request()
-      params.forEach((p, i) => request.input(`p${i}`, p))
       const result = await request.query(sql)
       const duration = Date.now() - start
       const rows = result.recordset || []
@@ -59,15 +65,16 @@ export class MSSQLAdapter implements DatabaseAdapter {
         duration
       }
     } catch (err) {
-      return {
-        columns: [],
-        rows: [],
-        rowCount: 0,
-        duration: Date.now() - start,
-        error: (err as Error).message
+      await this.pool.request().query('IF @@TRANCOUNT > 0 ROLLBACK').catch(() => {})
+      throw err
+    } finally {
+      const upperSql = sql.toUpperCase()
+      if (upperSql.includes('BEGIN TRANSACTION') || upperSql.includes('BEGIN TRAN')) {
+        await this.pool.request().query('IF @@TRANCOUNT > 0 ROLLBACK').catch(() => {})
       }
     }
   }
+
 
   async getDatabases(): Promise<string[]> {
     const result = await this.query(`SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name`)
@@ -76,14 +83,18 @@ export class MSSQLAdapter implements DatabaseAdapter {
 
   async getTables(database?: string): Promise<TableInfo[]> {
     const result = await this.query(
-      `SELECT TABLE_NAME, TABLE_TYPE, TABLE_SCHEMA
-       FROM INFORMATION_SCHEMA.TABLES
-       ORDER BY TABLE_SCHEMA, TABLE_NAME`
+      `SELECT t.TABLE_NAME, t.TABLE_TYPE, t.TABLE_SCHEMA, p.rows AS row_count
+       FROM INFORMATION_SCHEMA.TABLES t
+       LEFT JOIN sys.tables st ON st.name = t.TABLE_NAME
+       LEFT JOIN sys.schemas ss ON ss.name = t.TABLE_SCHEMA AND ss.schema_id = st.schema_id
+       LEFT JOIN sys.partitions p ON p.object_id = st.object_id AND p.index_id IN (0,1)
+       ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME`
     )
     return result.rows.map((r) => ({
       name: r['TABLE_NAME'] as string,
       type: (r['TABLE_TYPE'] as string) === 'VIEW' ? 'view' : 'table',
-      schema: r['TABLE_SCHEMA'] as string
+      schema: r['TABLE_SCHEMA'] as string,
+      rowCount: r['row_count'] != null ? Number(r['row_count']) : undefined
     }))
   }
 
