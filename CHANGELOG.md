@@ -1,3 +1,10 @@
+## [1.26.1](https://github.com/kobenguyent/KobeanSQL/compare/v1.26.0...v1.26.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* hang query ([#63](https://github.com/kobenguyent/KobeanSQL/issues/63)) ([2b042c5](https://github.com/kobenguyent/KobeanSQL/commit/2b042c5e2747951e0030ed80ef40a98627efabed))
+
 # [1.26.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.25.3...v1.26.0) (2026-06-15)
 
 
