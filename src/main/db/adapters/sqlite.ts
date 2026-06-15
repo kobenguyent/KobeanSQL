@@ -18,6 +18,7 @@ type SQLiteDatabase = {
 }
 
 export class SQLiteAdapter implements DatabaseAdapter {
+  dialect: ConnectionConfig['type'] = 'sqlite'
   private db: SQLiteDatabase | null = null
   private connected = false
 
@@ -75,46 +76,37 @@ export class SQLiteAdapter implements DatabaseAdapter {
   async query(sql: string, params: unknown[] = []): Promise<QueryResult> {
     if (!this.db) throw new Error('Not connected')
     const start = Date.now()
-    try {
-      const trimmed = sql.trim().toLowerCase()
-      const isSelect =
-        trimmed.startsWith('select') || trimmed.startsWith('with') || trimmed.startsWith('pragma')
-      if (isSelect) {
-        const stmt = this.db.prepare(sql)
-        const rows = stmt.all(...params) as SQLiteRow[]
-        const metadataColumns = (stmt.columns?.() ?? []).map((col) => ({
-          name: col.name,
-          type: col.type || 'TEXT',
-          nullable: true,
-          primaryKey: false
-        }))
-        const duration = Date.now() - start
-        const columns =
-          rows.length > 0
-            ? Object.keys(rows[0]).map((name) => ({ name, type: 'TEXT', nullable: true, primaryKey: false }))
-            : metadataColumns
-        return { columns, rows, rowCount: rows.length, duration }
-      } else {
-        const stmt = this.db.prepare(sql)
-        const result = stmt.run(...params)
-        const duration = Date.now() - start
-        return {
-          columns: [],
-          rows: [],
-          rowCount: result.changes,
-          duration
-        }
-      }
-    } catch (err) {
+    const trimmed = sql.trim().toLowerCase()
+    const isSelect =
+      trimmed.startsWith('select') || trimmed.startsWith('with') || trimmed.startsWith('pragma')
+    if (isSelect) {
+      const stmt = this.db.prepare(sql)
+      const rows = stmt.all(...params) as SQLiteRow[]
+      const metadataColumns = (stmt.columns?.() ?? []).map((col) => ({
+        name: col.name,
+        type: col.type || 'TEXT',
+        nullable: true,
+        primaryKey: false
+      }))
+      const duration = Date.now() - start
+      const columns =
+        rows.length > 0
+          ? Object.keys(rows[0]).map((name) => ({ name, type: 'TEXT', nullable: true, primaryKey: false }))
+          : metadataColumns
+      return { columns, rows, rowCount: rows.length, duration }
+    } else {
+      const stmt = this.db.prepare(sql)
+      const result = stmt.run(...params)
+      const duration = Date.now() - start
       return {
         columns: [],
         rows: [],
-        rowCount: 0,
-        duration: Date.now() - start,
-        error: (err as Error).message
+        rowCount: result.changes,
+        duration
       }
     }
   }
+
 
   async getDatabases(): Promise<string[]> {
     if (!this.db) return []

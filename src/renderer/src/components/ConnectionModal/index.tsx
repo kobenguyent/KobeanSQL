@@ -12,20 +12,24 @@ interface Props {
 }
 
 interface ConnectionPersistenceActions {
-  connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string }>
+  connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType }>
   saveConnection(config: ConnectionConfig): Promise<void>
 }
 
 export async function connectThenSaveConnection(
   config: ConnectionConfig,
   { connect, saveConnection }: ConnectionPersistenceActions
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType }> {
   const result = await connect(config)
   if (!result.success) {
     return result
   }
 
-  await saveConnection(config)
+  const finalConfig = result.detectedType && result.detectedType !== config.type
+    ? { ...config, type: result.detectedType }
+    : config
+
+  await saveConnection(finalConfig)
   return result
 }
 
@@ -198,12 +202,18 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
     setTestResult(null)
     const fullConfig: ConnectionConfig = { id: editConfig?.id ?? genId(), ...config }
     const result = await window.db.testConnection(fullConfig)
+    
+    if (result.success && result.detectedType && result.detectedType !== config.type) {
+      // If we detected a more specific engine (e.g. MariaDB), update the form state
+      handleTypeChange(result.detectedType)
+    }
+
     setTestResult({
       success: result.success,
       error: result.success ? undefined : (result.error || 'Connection failed')
     })
     setTesting(false)
-  }, [config, editConfig, disableConnectActions, uriModeMissing, uriPreview.error])
+  }, [config, editConfig, disableConnectActions, uriModeMissing, uriPreview.error, handleTypeChange])
 
   const handleSave = useCallback(async () => {
     if (!config.name.trim()) {

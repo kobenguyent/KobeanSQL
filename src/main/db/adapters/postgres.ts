@@ -1,52 +1,57 @@
-import { Client, QueryResult as PgQueryResult } from 'pg'
+import { Pool, QueryResult as PgQueryResult } from 'pg'
 import { DatabaseAdapter } from '../adapter'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from '../types'
 import { resolveConnectionConfig } from '../connection-uri'
 
 export class PostgresAdapter implements DatabaseAdapter {
-  private client: Client | null = null
+  dialect: ConnectionConfig['type'] = 'postgres'
+  private pool: Pool | null = null
   private config: ConnectionConfig | null = null
   private _connected = false
-  private _onEnd = (): void => { this._connected = false }
-  private _onError = (): void => { this._connected = false }
 
   async connect(config: ConnectionConfig): Promise<void> {
     const resolvedConfig = resolveConnectionConfig(config)
     this.config = resolvedConfig
-    this.client = new Client({
+    this.pool = new Pool({
       host: resolvedConfig.host || 'localhost',
       port: resolvedConfig.port || 5432,
       user: resolvedConfig.user || 'postgres',
       password: resolvedConfig.password || '',
       database: resolvedConfig.database || 'postgres',
       ssl: resolvedConfig.ssl ? { rejectUnauthorized: false } : undefined,
-      connectionTimeoutMillis: 10000
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
+      max: 5, // Strictly limit to 5 concurrent connections
+      allowExitOnIdle: true,
+      keepAlive: true, // Prevent silent connection drops
+      keepAliveInitialDelayMillis: 10000
     })
-    await this.client.connect()
+    
+    // Test connectivity
+    const client = await this.pool.connect()
+    client.release()
+    
     this._connected = true
-    this.client.on('end', this._onEnd)
-    this.client.on('error', this._onError)
   }
 
   async disconnect(): Promise<void> {
     this._connected = false
-    if (this.client) {
-      this.client.off('end', this._onEnd)
-      this.client.off('error', this._onError)
-      await this.client.end()
-      this.client = null
+    if (this.pool) {
+      await this.pool.end()
+      this.pool = null
     }
   }
 
   isConnected(): boolean {
-    return this._connected && this.client !== null
+    return this._connected && this.pool !== null
   }
 
   async query(sql: string, params: unknown[] = []): Promise<QueryResult> {
-    if (!this.client) throw new Error('Not connected')
+    if (!this.pool) throw new Error('Not connected')
+    const client = await this.pool.connect()
     const start = Date.now()
     try {
-      const res: PgQueryResult = await this.client.query(sql, params)
+      const res: PgQueryResult = await client.query(sql, params)
       const duration = Date.now() - start
       const columns = res.fields.map((f) => ({
         name: f.name,
@@ -61,15 +66,22 @@ export class PostgresAdapter implements DatabaseAdapter {
         duration
       }
     } catch (err) {
-      return {
-        columns: [],
-        rows: [],
-        rowCount: 0,
-        duration: Date.now() - start,
-        error: (err as Error).message
+      // If a transaction was started but failed, ensure it's rolled back before release
+      await client.query('ROLLBACK').catch(() => {})
+      throw err
+    } finally {
+      // Safety: If the query string contains transaction-starting keywords, 
+      // we must ensure the client is returned to the pool in a clean state.
+      // Since we don't support persistent sessions, any uncommitted transaction must be rolled back.
+      const upperSql = sql.toUpperCase()
+      if (upperSql.includes('BEGIN') || upperSql.includes('START TRANSACTION')) {
+        await client.query('ROLLBACK').catch(() => {})
       }
+      client.release()
     }
   }
+
+
 
   async getDatabases(): Promise<string[]> {
     const result = await this.query(
@@ -80,15 +92,17 @@ export class PostgresAdapter implements DatabaseAdapter {
 
   async getTables(database?: string): Promise<TableInfo[]> {
     const result = await this.query(
-      `SELECT table_name, table_type, table_schema
-       FROM information_schema.tables
-       WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-       ORDER BY table_schema, table_name`
+      `SELECT t.table_name, t.table_type, t.table_schema, s.n_live_tup AS row_count
+       FROM information_schema.tables t
+       LEFT JOIN pg_stat_user_tables s ON s.relname = t.table_name AND s.schemaname = t.table_schema
+       WHERE t.table_schema NOT IN ('pg_catalog', 'information_schema')
+       ORDER BY t.table_schema, t.table_name`
     )
     return result.rows.map((r) => ({
       name: r['table_name'] as string,
       type: (r['table_type'] as string) === 'VIEW' ? 'view' : 'table',
-      schema: r['table_schema'] as string
+      schema: r['table_schema'] as string,
+      rowCount: r['row_count'] ? Number(r['row_count']) : undefined
     }))
   }
 

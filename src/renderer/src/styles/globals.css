@@ -2140,7 +2140,7 @@ tr.row-selected .row-num-td .row-num-label { opacity: 0; }
 .schema-visualizer-footer {
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
   padding: 6px 16px;
   border-top: 1px solid var(--glass-border);
   background: var(--glass-bg-light);
@@ -2148,6 +2148,27 @@ tr.row-selected .row-num-td .row-num-label { opacity: 0; }
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
 }
+
+.schema-stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.schema-warning {
+  color: var(--color-warning);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: help;
+}
+
+.schema-warning::before {
+  content: "⚠";
+  font-size: 14px;
+}
+
 
 /* ── States: loading / error / empty ──────────────────────── */
 .schema-loading,

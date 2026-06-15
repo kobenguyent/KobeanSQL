@@ -64,8 +64,8 @@ declare global {
       getConnections(): Promise<ConnectionConfig[]>
       saveConnection(config: ConnectionConfig): Promise<{ success: boolean }>
       deleteConnection(id: string): Promise<{ success: boolean }>
-      testConnection(config: ConnectionConfig): Promise<{ success: boolean; error?: string }>
-      connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string }>
+      testConnection(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType }>
+      connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType }>
       disconnect(id: string): Promise<{ success: boolean }>
       isConnected(id: string): Promise<boolean>
       query(connectionId: string, sql: string, params?: unknown[]): Promise<QueryResult>
@@ -338,6 +338,12 @@ export const useAppStore = create<AppState>()(
       if (result.success) {
         set((s) => {
           s.connectedIds.add(config.id)
+          if (result.detectedType && result.detectedType !== config.type) {
+            const conn = s.connections.find((c) => c.id === config.id)
+            if (conn) {
+              conn.type = result.detectedType
+            }
+          }
           if (!s.schema[config.id]) {
             s.schema[config.id] = {
               databases: [],
@@ -350,7 +356,9 @@ export const useAppStore = create<AppState>()(
             }
           }
         })
-        get().setStatus(`Connected to ${config.name}`, 'success')
+        const finalType = result.detectedType || config.type
+        const typeLabel = finalType === 'mariadb' ? 'MariaDB' : finalType.charAt(0).toUpperCase() + finalType.slice(1)
+        get().setStatus(`Connected to ${config.name} (${typeLabel})`, 'success')
         void window.db.addConnectionLog({
           id: genId(),
           connectionId: config.id,

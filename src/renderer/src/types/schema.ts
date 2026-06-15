@@ -27,7 +27,10 @@ export interface SchemaRelationship {
 export interface DatabaseSchema {
   tables: SchemaTable[]
   relationships: SchemaRelationship[]
+  /** Whether the schema was truncated due to a large number of tables */
+  truncated?: boolean
 }
+
 
 /** Props accepted by the SchemaCanvas component */
 export type SchemaViewMode = 'GLOBAL_MODE' | 'FOCUSED_MODE'

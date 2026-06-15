@@ -3,6 +3,7 @@ import { DatabaseAdapter } from '../adapter'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from '../types'
 
 export class CassandraAdapter implements DatabaseAdapter {
+  dialect: ConnectionConfig['type'] = 'cassandra'
   private client: cassandra.Client | null = null
   private config: ConnectionConfig | null = null
   private connected = false
@@ -46,26 +47,23 @@ export class CassandraAdapter implements DatabaseAdapter {
   async query(cql: string, params: unknown[] = []): Promise<QueryResult> {
     if (!this.client) throw new Error('Not connected')
     const start = Date.now()
-    try {
-      const result = await this.client.execute(cql, params, { prepare: true })
-      const columns = result.columns?.map((c) => ({
-        name: c.name,
-        type: c.type?.code?.toString() ?? 'unknown',
-        nullable: true,
-        primaryKey: false
-      })) ?? []
-      const rows = result.rows?.map((row) => {
-        const record: Record<string, unknown> = {}
-        for (const col of columns) {
-          record[col.name] = row[col.name]
-        }
-        return record
-      }) ?? []
-      return { columns, rows, rowCount: rows.length, duration: Date.now() - start }
-    } catch (err) {
-      return { columns: [], rows: [], rowCount: 0, duration: Date.now() - start, error: (err as Error).message }
-    }
+    const result = await this.client.execute(cql, params, { prepare: true })
+    const columns = result.columns?.map((c) => ({
+      name: c.name,
+      type: c.type?.code?.toString() ?? 'unknown',
+      nullable: true,
+      primaryKey: false
+    })) ?? []
+    const rows = result.rows?.map((row) => {
+      const record: Record<string, unknown> = {}
+      for (const col of columns) {
+        record[col.name] = row[col.name]
+      }
+      return record
+    }) ?? []
+    return { columns, rows, rowCount: rows.length, duration: Date.now() - start }
   }
+
 
   async getDatabases(): Promise<string[]> {
     const result = await this.query('SELECT keyspace_name FROM system_schema.keyspaces')

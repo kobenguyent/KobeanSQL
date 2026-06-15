@@ -21,6 +21,7 @@ function flattenMappingProperties(
 }
 
 export class ElasticsearchAdapter implements DatabaseAdapter {
+  dialect: ConnectionConfig['type'] = 'elasticsearch'
   private client: Client | null = null
   private config: ConnectionConfig | null = null
   private connected = false
@@ -57,34 +58,36 @@ export class ElasticsearchAdapter implements DatabaseAdapter {
   async query(dsl: string, _params: unknown[] = []): Promise<QueryResult> {
     if (!this.client) throw new Error('Not connected')
     const start = Date.now()
-    try {
-      const trimmed = dsl.trim()
-      // Support "INDEX_NAME: {...}" or plain JSON body
-      let index = this.config?.database || '*'
-      let body: Record<string, unknown>
+    const trimmed = dsl.trim()
+    // Support "INDEX_NAME: {...}" or plain JSON body
+    let index = this.config?.database || '*'
+    let body: Record<string, unknown>
 
-      const colonIdx = trimmed.indexOf(':')
-      if (colonIdx > 0 && !trimmed.startsWith('{')) {
-        index = trimmed.slice(0, colonIdx).trim()
-        body = JSON.parse(trimmed.slice(colonIdx + 1).trim()) as Record<string, unknown>
-      } else {
-        body = JSON.parse(trimmed) as Record<string, unknown>
-      }
-
-      const result = await this.client.search({ index, body })
-      const hits = result.hits?.hits ?? []
-      const rows = hits.map((hit) => {
-        const source = (hit._source ?? {}) as Record<string, unknown>
-        return { _id: hit._id, _index: hit._index, _score: hit._score, ...source }
-      })
-      const columns = rows.length > 0
-        ? Object.keys(rows[0]).map((name) => ({ name, type: 'unknown', nullable: true, primaryKey: name === '_id' }))
-        : []
-      return { columns, rows, rowCount: hits.length, duration: Date.now() - start }
-    } catch (err) {
-      return { columns: [], rows: [], rowCount: 0, duration: Date.now() - start, error: (err as Error).message }
+    const colonIdx = trimmed.indexOf(':')
+    if (colonIdx > 0 && !trimmed.startsWith('{')) {
+      index = trimmed.slice(0, colonIdx).trim()
+      body = JSON.parse(trimmed.slice(colonIdx + 1).trim()) as Record<string, unknown>
+    } else {
+      body = JSON.parse(trimmed) as Record<string, unknown>
     }
+
+    // Safety: Enforce size limit if not provided
+    if (body.size === undefined) {
+      body.size = 1000
+    }
+
+    const result = await this.client.search({ index, body })
+    const hits = result.hits?.hits ?? []
+    const rows = hits.map((hit) => {
+      const source = (hit._source ?? {}) as Record<string, unknown>
+      return { _id: hit._id, _index: hit._index, _score: hit._score, ...source }
+    })
+    const columns = rows.length > 0
+      ? Object.keys(rows[0]).map((name) => ({ name, type: 'unknown', nullable: true, primaryKey: name === '_id' }))
+      : []
+    return { columns, rows, rowCount: hits.length, duration: Date.now() - start }
   }
+
 
   async getDatabases(): Promise<string[]> {
     // Elasticsearch doesn't have databases; return a virtual "default"

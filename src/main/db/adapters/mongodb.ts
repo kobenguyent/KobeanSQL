@@ -282,6 +282,7 @@ function buildManualMongoUri(config: ConnectionConfig): string {
 }
 
 export class MongoDBAdapter implements DatabaseAdapter {
+  dialect: ConnectionConfig['type'] = 'mongodb'
   private client: MongoClient | null = null
   private config: ConnectionConfig | null = null
   private connected = false
@@ -309,143 +310,134 @@ export class MongoDBAdapter implements DatabaseAdapter {
 
   async query(sql: string): Promise<QueryResult> {
     const start = Date.now()
-    try {
-      if (!this.client) throw new Error('Not connected')
-      const operation = parseMongoOperation(sql)
-      const dbName = this.config?.database || 'admin'
-      if (operation.kind === 'runCommand') {
-        const commandResult = await this.client.db(dbName).command(operation.command)
-        return buildResultFromRows([commandResult as Record<string, unknown>], Date.now() - start)
+    if (!this.client) throw new Error('Not connected')
+    const operation = parseMongoOperation(sql)
+    const dbName = this.config?.database || 'admin'
+    if (operation.kind === 'runCommand') {
+      const commandResult = await this.client.db(dbName).command(operation.command)
+      return buildResultFromRows([commandResult as Record<string, unknown>], Date.now() - start)
+    }
+
+    const collection = this.client.db(dbName).collection(operation.collection)
+
+    if (operation.kind === 'find') {
+      const documents = await collection
+        .find(operation.filter, operation.projection ? { projection: operation.projection } : undefined)
+        .limit(operation.limit ?? 1000)
+        .toArray()
+      return buildResultFromRows(documents as Record<string, unknown>[], Date.now() - start)
+    }
+
+    if (operation.kind === 'aggregate') {
+      const documents = await collection.aggregate(operation.pipeline).toArray()
+      return buildResultFromRows(documents as Record<string, unknown>[], Date.now() - start)
+    }
+
+    switch (operation.method) {
+      case 'insertOne': {
+        const document = toDocument(operation.args[0], 'insertOne requires one JSON document argument')
+        const insertResult = await collection.insertOne(document)
+        return buildResultFromRows([{
+          acknowledged: insertResult.acknowledged,
+          insertedId: normalizeMongoValue(insertResult.insertedId)
+        }], Date.now() - start)
       }
-
-      const collection = this.client.db(dbName).collection(operation.collection)
-
-      if (operation.kind === 'find') {
-        const documents = await collection
-          .find(operation.filter, operation.projection ? { projection: operation.projection } : undefined)
-          .limit(operation.limit ?? 100)
-          .toArray()
-        return buildResultFromRows(documents as Record<string, unknown>[], Date.now() - start)
+      case 'insertMany': {
+        const documents = toDocumentArray(operation.args[0], 'insertMany requires one JSON array argument')
+        const insertManyResult = await collection.insertMany(documents)
+        return buildResultFromRows([{
+          acknowledged: insertManyResult.acknowledged,
+          insertedCount: insertManyResult.insertedCount,
+          insertedIds: normalizeMongoValue(insertManyResult.insertedIds)
+        }], Date.now() - start)
       }
-
-      if (operation.kind === 'aggregate') {
-        const documents = await collection.aggregate(operation.pipeline).toArray()
-        return buildResultFromRows(documents as Record<string, unknown>[], Date.now() - start)
+      case 'updateOne':
+      case 'updateMany': {
+        const filter = toDocument(operation.args[0], `${operation.method} requires a filter JSON object`)
+        const update = operation.args[1]
+        if (
+          !update ||
+          typeof update !== 'object' ||
+          (!Array.isArray(update) && Object.keys(update as Record<string, unknown>).length === 0)
+        ) {
+          throw new Error(`${operation.method} requires an update document or pipeline`)
+        }
+        const options = toOptionalDocument(operation.args[2])
+        const updateResult =
+          operation.method === 'updateOne'
+            ? await collection.updateOne(filter, update as Record<string, unknown>, options)
+            : await collection.updateMany(filter, update as Record<string, unknown>, options)
+        return buildResultFromRows([{
+          acknowledged: updateResult.acknowledged,
+          matchedCount: updateResult.matchedCount,
+          modifiedCount: updateResult.modifiedCount,
+          upsertedId: normalizeMongoValue(updateResult.upsertedId),
+          upsertedCount: updateResult.upsertedCount
+        }], Date.now() - start)
       }
-
-      switch (operation.method) {
-        case 'insertOne': {
-          const document = toDocument(operation.args[0], 'insertOne requires one JSON document argument')
-          const insertResult = await collection.insertOne(document)
-          return buildResultFromRows([{
-            acknowledged: insertResult.acknowledged,
-            insertedId: normalizeMongoValue(insertResult.insertedId)
-          }], Date.now() - start)
-        }
-        case 'insertMany': {
-          const documents = toDocumentArray(operation.args[0], 'insertMany requires one JSON array argument')
-          const insertManyResult = await collection.insertMany(documents)
-          return buildResultFromRows([{
-            acknowledged: insertManyResult.acknowledged,
-            insertedCount: insertManyResult.insertedCount,
-            insertedIds: normalizeMongoValue(insertManyResult.insertedIds)
-          }], Date.now() - start)
-        }
-        case 'updateOne':
-        case 'updateMany': {
-          const filter = toDocument(operation.args[0], `${operation.method} requires a filter JSON object`)
-          const update = operation.args[1]
-          if (
-            !update ||
-            typeof update !== 'object' ||
-            (!Array.isArray(update) && Object.keys(update as Record<string, unknown>).length === 0)
-          ) {
-            throw new Error(`${operation.method} requires an update document or pipeline`)
-          }
-          const options = toOptionalDocument(operation.args[2])
-          const updateResult =
-            operation.method === 'updateOne'
-              ? await collection.updateOne(filter, update as Record<string, unknown>, options)
-              : await collection.updateMany(filter, update as Record<string, unknown>, options)
-          return buildResultFromRows([{
-            acknowledged: updateResult.acknowledged,
-            matchedCount: updateResult.matchedCount,
-            modifiedCount: updateResult.modifiedCount,
-            upsertedId: normalizeMongoValue(updateResult.upsertedId),
-            upsertedCount: updateResult.upsertedCount
-          }], Date.now() - start)
-        }
-        case 'replaceOne': {
-          const filter = toDocument(operation.args[0], 'replaceOne requires a filter JSON object')
-          const replacement = toDocument(operation.args[1], 'replaceOne requires a replacement JSON object')
-          const options = toOptionalDocument(operation.args[2])
-          const replaceResult = await collection.replaceOne(filter, replacement, options)
-          return buildResultFromRows([{
-            acknowledged: replaceResult.acknowledged,
-            matchedCount: replaceResult.matchedCount,
-            modifiedCount: replaceResult.modifiedCount,
-            upsertedId: normalizeMongoValue(replaceResult.upsertedId),
-            upsertedCount: replaceResult.upsertedCount
-          }], Date.now() - start)
-        }
-        case 'deleteOne':
-        case 'deleteMany': {
-          const filter = toDocument(operation.args[0], `${operation.method} requires a filter JSON object`)
-          const options = toOptionalDocument(operation.args[1])
-          const deleteResult =
-            operation.method === 'deleteOne'
-              ? await collection.deleteOne(filter, options)
-              : await collection.deleteMany(filter, options)
-          return buildResultFromRows([{
-            acknowledged: deleteResult.acknowledged,
-            deletedCount: deleteResult.deletedCount
-          }], Date.now() - start)
-        }
-        case 'findOneAndUpdate': {
-          const filter = toDocument(operation.args[0], 'findOneAndUpdate requires a filter JSON object')
-          const update = operation.args[1]
-          if (!update || typeof update !== 'object') {
-            throw new Error('findOneAndUpdate requires an update document or pipeline')
-          }
-          const options = toOptionalDocument(operation.args[2])
-          const document = await collection.findOneAndUpdate(filter, update as Record<string, unknown>, options)
-          return buildResultFromRows(document ? [document as Record<string, unknown>] : [], Date.now() - start)
-        }
-        case 'findOneAndDelete': {
-          const filter = toDocument(operation.args[0], 'findOneAndDelete requires a filter JSON object')
-          const options = toOptionalDocument(operation.args[1])
-          const document = await collection.findOneAndDelete(filter, options)
-          return buildResultFromRows(document ? [document as Record<string, unknown>] : [], Date.now() - start)
-        }
-        case 'findOneAndReplace': {
-          const filter = toDocument(operation.args[0], 'findOneAndReplace requires a filter JSON object')
-          const replacement = toDocument(operation.args[1], 'findOneAndReplace requires a replacement JSON object')
-          const options = toOptionalDocument(operation.args[2])
-          const document = await collection.findOneAndReplace(filter, replacement, options)
-          return buildResultFromRows(document ? [document as Record<string, unknown>] : [], Date.now() - start)
-        }
-        case 'countDocuments': {
-          const filter = operation.args[0]
-          const parsedFilter =
-            filter === undefined
-              ? {}
-              : toDocument(filter, 'countDocuments filter must be a JSON object')
-          const count = await collection.countDocuments(parsedFilter)
-          return buildResultFromRows([{ count }], Date.now() - start)
-        }
+      case 'replaceOne': {
+        const filter = toDocument(operation.args[0], 'replaceOne requires a filter JSON object')
+        const replacement = toDocument(operation.args[1], 'replaceOne requires a replacement JSON object')
+        const options = toOptionalDocument(operation.args[2])
+        const replaceResult = await collection.replaceOne(filter, replacement, options)
+        return buildResultFromRows([{
+          acknowledged: replaceResult.acknowledged,
+          matchedCount: replaceResult.matchedCount,
+          modifiedCount: replaceResult.modifiedCount,
+          upsertedId: normalizeMongoValue(replaceResult.upsertedId),
+          upsertedCount: replaceResult.upsertedCount
+        }], Date.now() - start)
       }
-
-      throw new Error('Unsupported MongoDB query.')
-    } catch (err) {
-      return {
-        columns: [],
-        rows: [],
-        rowCount: 0,
-        duration: Date.now() - start,
-        error: (err as Error).message
+      case 'deleteOne':
+      case 'deleteMany': {
+        const filter = toDocument(operation.args[0], `${operation.method} requires a filter JSON object`)
+        const options = toOptionalDocument(operation.args[1])
+        const deleteResult =
+          operation.method === 'deleteOne'
+            ? await collection.deleteOne(filter, options)
+            : await collection.deleteMany(filter, options)
+        return buildResultFromRows([{
+          acknowledged: deleteResult.acknowledged,
+          deletedCount: deleteResult.deletedCount
+        }], Date.now() - start)
+      }
+      case 'findOneAndUpdate': {
+        const filter = toDocument(operation.args[0], 'findOneAndUpdate requires a filter JSON object')
+        const update = operation.args[1]
+        if (!update || typeof update !== 'object') {
+          throw new Error('findOneAndUpdate requires an update document or pipeline')
+        }
+        const options = toOptionalDocument(operation.args[2])
+        const document = await collection.findOneAndUpdate(filter, update as Record<string, unknown>, options)
+        return buildResultFromRows(document ? [document as Record<string, unknown>] : [], Date.now() - start)
+      }
+      case 'findOneAndDelete': {
+        const filter = toDocument(operation.args[0], 'findOneAndDelete requires a filter JSON object')
+        const options = toOptionalDocument(operation.args[1])
+        const document = await collection.findOneAndDelete(filter, options)
+        return buildResultFromRows(document ? [document as Record<string, unknown>] : [], Date.now() - start)
+      }
+      case 'findOneAndReplace': {
+        const filter = toDocument(operation.args[0], 'findOneAndReplace requires a filter JSON object')
+        const replacement = toDocument(operation.args[1], 'findOneAndReplace requires a replacement JSON object')
+        const options = toOptionalDocument(operation.args[2])
+        const document = await collection.findOneAndReplace(filter, replacement, options)
+        return buildResultFromRows(document ? [document as Record<string, unknown>] : [], Date.now() - start)
+      }
+      case 'countDocuments': {
+        const filter = operation.args[0]
+        const parsedFilter =
+          filter === undefined
+            ? {}
+            : toDocument(filter, 'countDocuments filter must be a JSON object')
+        const count = await collection.countDocuments(parsedFilter)
+        return buildResultFromRows([{ count }], Date.now() - start)
       }
     }
+
+    throw new Error('Unsupported MongoDB query.')
   }
+
 
   async getDatabases(): Promise<string[]> {
     if (!this.client) throw new Error('Not connected')
