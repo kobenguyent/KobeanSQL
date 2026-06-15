@@ -60,7 +60,7 @@ export class MariaDBAdapter implements DatabaseAdapter {
       
       const meta = (rows as any).meta as FieldInfo[] | undefined
       const columns = (meta || []).map((f) => ({
-        name: f.name,
+        name: typeof f.name === 'function' ? f.name() : f.name,
         type: f.type?.toString() || 'unknown',
         nullable: true,
         primaryKey: false
