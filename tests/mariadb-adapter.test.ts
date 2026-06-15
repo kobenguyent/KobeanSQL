@@ -93,14 +93,15 @@ describe('MariaDBAdapter', () => {
 
   it('should get tables', async () => {
     const mockRows = [
-      { TABLE_NAME: 'users', TABLE_TYPE: 'BASE TABLE', TABLE_ROWS: 100 },
-      { TABLE_NAME: 'views', TABLE_TYPE: 'VIEW', TABLE_ROWS: null }
+      { TABLE_NAME: 'users', TABLE_TYPE: 'BASE TABLE', TABLE_ROWS: 100, ENGINE: 'InnoDB' },
+      { TABLE_NAME: 'views', TABLE_TYPE: 'VIEW', TABLE_ROWS: null, ENGINE: null }
     ]
     Object.defineProperty(mockRows, 'meta', {
       value: [
         { name: () => 'TABLE_NAME', type: 'VARCHAR' },
         { name: () => 'TABLE_TYPE', type: 'VARCHAR' },
-        { name: () => 'TABLE_ROWS', type: 'INT' }
+        { name: () => 'TABLE_ROWS', type: 'INT' },
+        { name: () => 'ENGINE', type: 'VARCHAR' }
       ],
       enumerable: false
     })
@@ -108,7 +109,7 @@ describe('MariaDBAdapter', () => {
 
     const tables = await adapter.getTables('mysql')
     expect(tables).toHaveLength(2)
-    expect(tables[0]).toEqual({ name: 'users', type: 'table', rowCount: 100 })
-    expect(tables[1]).toEqual({ name: 'views', type: 'view', rowCount: undefined })
+    expect(tables[0]).toEqual({ name: 'users', type: 'table', rowCount: 100, engine: 'InnoDB' })
+    expect(tables[1]).toEqual({ name: 'views', type: 'view', rowCount: undefined, engine: undefined })
   })
 })

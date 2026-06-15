@@ -96,13 +96,14 @@ export class MySQLAdapter implements DatabaseAdapter {
     const db = database || this.config?.database
     if (!db) return []
     const result = await this.query(
-      `SELECT TABLE_NAME, TABLE_TYPE, TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?`,
+      `SELECT TABLE_NAME, TABLE_TYPE, TABLE_ROWS, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?`,
       [db]
     )
     return result.rows.map((r) => ({
       name: r['TABLE_NAME'] as string,
       type: (r['TABLE_TYPE'] as string) === 'VIEW' ? 'view' : 'table',
-      rowCount: r['TABLE_ROWS'] != null ? Number(r['TABLE_ROWS']) : undefined
+      rowCount: r['TABLE_ROWS'] != null ? Number(r['TABLE_ROWS']) : undefined,
+      engine: r['ENGINE'] != null ? r['ENGINE'] as string : undefined
     }))
   }
 
