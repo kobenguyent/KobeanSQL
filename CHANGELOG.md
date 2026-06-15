@@ -1,3 +1,10 @@
+# [1.27.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.26.1...v1.27.0) (2026-06-15)
+
+
+### Features
+
+* table show meatadata ([#64](https://github.com/kobenguyent/KobeanSQL/issues/64)) ([b2d9163](https://github.com/kobenguyent/KobeanSQL/commit/b2d91633fc5f58a305ffd390fceb3e920118490b))
+
 ## [1.26.1](https://github.com/kobenguyent/KobeanSQL/compare/v1.26.0...v1.26.1) (2026-06-15)
 
 
