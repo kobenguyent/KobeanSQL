@@ -35,6 +35,8 @@ export interface TableInfo {
   name: string
   type: 'table' | 'view'
   schema?: string
+  rowCount?: number
+  engine?: string
 }
 
 export interface ProcedureInfo {

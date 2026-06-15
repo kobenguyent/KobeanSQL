@@ -40,6 +40,7 @@ export interface TableInfo {
   type: 'table' | 'view'
   schema?: string
   rowCount?: number
+  engine?: string
 }
 
 export interface ColumnInfo {

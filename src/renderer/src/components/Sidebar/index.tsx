@@ -598,9 +598,27 @@ export function Sidebar({ onNewConnection, onEditConnection }: Props): React.JSX
                                                 onClick={(e) => { e.stopPropagation(); handleOpenTableData(conn.id, tbl.name, dbName, tbl.schema) }}
                                               >
                                                 <Table size={11} style={{ opacity: 0.7, flexShrink: 0 }} />
-                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '4px' }}>
                                                   {tbl.name}
                                                 </span>
+                                                {(tbl.rowCount !== undefined || tbl.engine) && (
+                                                  <span
+                                                    style={{
+                                                      fontSize: '9px',
+                                                      color: 'var(--text-tertiary)',
+                                                      opacity: 0.7,
+                                                      fontFamily: 'var(--font-mono)',
+                                                      whiteSpace: 'nowrap',
+                                                      overflow: 'hidden',
+                                                      textOverflow: 'ellipsis'
+                                                    }}
+                                                    title={`${tbl.rowCount !== undefined ? tbl.rowCount.toLocaleString() + ' rows' : ''}${tbl.rowCount !== undefined && tbl.engine ? ' • ' : ''}${tbl.engine || ''}`}
+                                                  >
+                                                    ({tbl.rowCount !== undefined ? tbl.rowCount.toLocaleString() + ' rows' : ''}
+                                                    {tbl.rowCount !== undefined && tbl.engine ? ', ' : ''}
+                                                    {tbl.engine})
+                                                  </span>
+                                                )}
                                               </span>
                                             </div>
 
@@ -672,9 +690,25 @@ export function Sidebar({ onNewConnection, onEditConnection }: Props): React.JSX
                                                 onClick={(e) => { e.stopPropagation(); handleOpenTableData(conn.id, tbl.name, dbName, tbl.schema) }}
                                               >
                                                 <Eye size={11} style={{ opacity: 0.7, flexShrink: 0 }} />
-                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '4px' }}>
                                                   {tbl.name}
                                                 </span>
+                                                {tbl.rowCount !== undefined && (
+                                                  <span
+                                                    style={{
+                                                      fontSize: '9px',
+                                                      color: 'var(--text-tertiary)',
+                                                      opacity: 0.7,
+                                                      fontFamily: 'var(--font-mono)',
+                                                      whiteSpace: 'nowrap',
+                                                      overflow: 'hidden',
+                                                      textOverflow: 'ellipsis'
+                                                    }}
+                                                    title={`${tbl.rowCount.toLocaleString()} rows`}
+                                                  >
+                                                    ({tbl.rowCount.toLocaleString()} rows)
+                                                  </span>
+                                                )}
                                               </span>
                                             </div>
 
