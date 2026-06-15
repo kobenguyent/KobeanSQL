@@ -11,6 +11,7 @@ vi.mock('electron-log', () => ({
 // Mock the individual adapters so we don't need real DB connections
 vi.mock('../src/main/db/adapters/mysql', () => ({
   MySQLAdapter: class {
+    dialect = 'mysql'
     async connect() {}
     async disconnect() {}
     isConnected() { return true }
@@ -25,6 +26,7 @@ vi.mock('../src/main/db/adapters/mysql', () => ({
 
 vi.mock('../src/main/db/adapters/postgres', () => ({
   PostgresAdapter: class {
+    dialect = 'postgres'
     async connect() {}
     async disconnect() {}
     isConnected() { return true }
@@ -39,6 +41,7 @@ vi.mock('../src/main/db/adapters/postgres', () => ({
 
 vi.mock('../src/main/db/adapters/sqlite', () => ({
   SQLiteAdapter: class {
+    dialect = 'sqlite'
     async connect() {}
     async disconnect() {}
     isConnected() { return true }

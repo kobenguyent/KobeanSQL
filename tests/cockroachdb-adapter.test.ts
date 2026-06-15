@@ -1,15 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock the pg Client used by PostgresAdapter (which CockroachDBAdapter extends)
+// Mock the pg Pool used by PostgresAdapter (which CockroachDBAdapter extends)
 const mockQuery = vi.fn()
 const mockConnect = vi.fn()
 const mockEnd = vi.fn()
-const mockOn = vi.fn()
-const mockOff = vi.fn()
+const mockRelease = vi.fn()
+
+const mockPoolInstance = {
+  connect: mockConnect,
+  end: mockEnd,
+  query: mockQuery,
+  on: vi.fn().mockReturnThis(),
+  off: vi.fn().mockReturnThis()
+}
 
 vi.mock('pg', () => ({
-  Client: vi.fn().mockImplementation(function MockClient() {
-    return { connect: mockConnect, end: mockEnd, query: mockQuery, on: mockOn, off: mockOff }
+  Pool: vi.fn().mockImplementation(function MockPool() {
+    return mockPoolInstance
   })
 }))
 
@@ -22,18 +29,17 @@ describe('CockroachDBAdapter', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    mockConnect.mockResolvedValue(undefined)
+    mockConnect.mockResolvedValue({ query: mockQuery, release: mockRelease })
     mockEnd.mockResolvedValue(undefined)
-    mockOn.mockReturnThis()
-    mockOff.mockReturnThis()
     const { CockroachDBAdapter } = await import('../src/main/db/adapters/cockroachdb')
     adapter = new CockroachDBAdapter()
   })
 
   it('connects with default CockroachDB port 26257', async () => {
-    const { Client } = await import('pg')
+    const { Pool } = await import('pg')
+    mockConnect.mockResolvedValue({ query: mockQuery, release: mockRelease })
     await adapter.connect({ id: 'crdb', name: 'test', type: 'cockroachdb', host: 'localhost' })
-    const callArg = (Client as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as { port: number }
+    const callArg = (Pool as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as { port: number }
     expect(callArg.port).toBe(26257)
   })
 
