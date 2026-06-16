@@ -1,3 +1,10 @@
+# [1.28.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.27.0...v1.28.0) (2026-06-16)
+
+
+### Features
+
+* support run multiple sql ([#65](https://github.com/kobenguyent/KobeanSQL/issues/65)) ([9e5f5c0](https://github.com/kobenguyent/KobeanSQL/commit/9e5f5c03b5bdebc349a3ff60663bca9ef954065d))
+
 # [1.27.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.26.1...v1.27.0) (2026-06-15)
 
 
