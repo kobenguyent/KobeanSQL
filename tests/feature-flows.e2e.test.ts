@@ -135,9 +135,10 @@ describe('E2E feature flows', () => {
     expect(useAppStore.getState().tabs[0].result?.rowCount).toBe(1)
 
     // Second query has LIKE pattern without quotes — adapter returns an error result
-    useAppStore.setState((s) => {
-      s.tabs[0].sql = 'SELECT * FROM users WHERE username LIKE %something%'
-    })
+    useAppStore.setState((s) => ({
+      ...s,
+      tabs: s.tabs.map((t, i) => i === 0 ? { ...t, sql: 'SELECT * FROM users WHERE username LIKE %something%' } : t)
+    }))
     await useAppStore.getState().runQuery('t1')
 
     const result = useAppStore.getState().tabs[0].result

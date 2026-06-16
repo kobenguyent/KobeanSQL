@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import CodeMirror from '@uiw/react-codemirror'
+import CodeMirror, { EditorView } from '@uiw/react-codemirror'
 import { sql as sqlLang, StandardSQL } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
 import {Play, StopCircle, Save, Wand2, Sparkles, Bot, X, MessageSquarePlus, Code2, Shield} from 'lucide-react'
@@ -94,11 +94,38 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
     }
   }, [activeConnection?.type])
 
+  const editorRef = React.useRef<EditorView | null>(null)
+
   const handleRunQuery = useCallback(() => {
     if (!tab.isRunning) {
-      runQuery(tab.id)
+      let sqlToRun = tab.sql
+      if (editorRef.current) {
+        const selection = editorRef.current.state.selection.main
+        if (!selection.empty) {
+          sqlToRun = editorRef.current.state.sliceDoc(selection.from, selection.to)
+        } else {
+          // If no selection, try to find the statement at the cursor
+          const pos = editorRef.current.state.selection.main.head
+          const doc = editorRef.current.state.doc.toString()
+          
+          // Simple split by semicolon. Find the bounds of the statement containing pos.
+          let start = doc.lastIndexOf(';', pos - 1)
+          let end = doc.indexOf(';', pos)
+          
+          if (start === -1) start = 0
+          else start += 1 // skip the semicolon itself
+          
+          if (end === -1) end = doc.length
+          
+          const statement = doc.slice(start, end).trim()
+          if (statement) {
+            sqlToRun = statement
+          }
+        }
+      }
+      runQuery(tab.id, sqlToRun)
     }
-  }, [tab.id, tab.isRunning, runQuery])
+  }, [tab.id, tab.isRunning, tab.sql, runQuery])
 
   const openSaveModal = useCallback(() => {
     setSaveName(tab.title || '')
@@ -374,6 +401,7 @@ export function QueryEditor({ tab }: Props): React.JSX.Element {
       {/* CodeMirror editor */}
       <div className="cm-editor-wrapper">
         <CodeMirror
+          onCreateEditor={(view) => { editorRef.current = view }}
           value={tab.sql}
           height="100%"
           theme={isLightTheme ? 'light' : oneDark}

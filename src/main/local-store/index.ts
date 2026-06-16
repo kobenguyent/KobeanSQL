@@ -63,61 +63,33 @@ export interface SchemaCacheEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Low-level SQLite driver types (mirrors the shape used in the adapter)
+// Low-level SQLite driver types
 // ---------------------------------------------------------------------------
 
 type SqliteRow = Record<string, unknown>
 
-type SqliteStatement = {
-  all: (...params: unknown[]) => SqliteRow[]
-  run: (...params: unknown[]) => { changes: number }
+interface SqliteStatement {
+  all(...params: unknown[]): SqliteRow[]
+  run(...params: unknown[]): { changes: number }
 }
 
-type SqliteDatabase = {
-  close: () => void
-  prepare: (sql: string) => SqliteStatement
-  exec?: (sql: string) => void
-  pragma?: (key: string) => unknown
+interface SqliteDatabase {
+  close(): void
+  prepare(sql: string): SqliteStatement
+  exec(sql: string): void
 }
 
 // ---------------------------------------------------------------------------
-// Helper: open a SQLite database using better-sqlite3 or node:sqlite fallback
+// Helper: open a SQLite database using native node:sqlite
 // ---------------------------------------------------------------------------
 
 async function openSqliteDatabase(filename: string): Promise<SqliteDatabase> {
-  try {
-    const mod = await import('better-sqlite3')
-    const BetterSqlite3 = mod.default
-    return new BetterSqlite3(filename, { readonly: false }) as SqliteDatabase
-  } catch {
-    const builtinSqlite = (
-      process as typeof process & { getBuiltinModule?: (name: string) => unknown }
-    ).getBuiltinModule?.('node:sqlite') as { DatabaseSync?: new (p: string) => SqliteDatabase } | undefined
-    const DatabaseSync = builtinSqlite?.DatabaseSync
-    if (!DatabaseSync) {
-      throw new Error('LocalStore: SQLite driver unavailable (better-sqlite3 and node:sqlite both failed)')
-    }
-    return new DatabaseSync(filename)
-  }
-}
-
-function execSql(db: SqliteDatabase, sql: string): void {
-  if (db.exec) {
-    db.exec(sql)
-  } else {
-    // node:sqlite fallback — split on ';' and run each statement via prepare
-    for (const stmt of sql.split(';').map((s) => s.trim()).filter(Boolean)) {
-      db.prepare(stmt).run()
-    }
-  }
+  const { DatabaseSync } = await import('node:sqlite')
+  return new DatabaseSync(filename) as unknown as SqliteDatabase
 }
 
 function applyPragma(db: SqliteDatabase, pragma: string): void {
-  if (db.pragma) {
-    db.pragma(pragma)
-  } else {
-    execSql(db, `PRAGMA ${pragma}`)
-  }
+  db.exec(`PRAGMA ${pragma}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +171,7 @@ export class LocalStore {
       applyPragma(this.db, 'foreign_keys = ON')
       
       // Run initial DDL (safe because of IF NOT EXISTS)
-      execSql(this.db, INITIAL_DDL)
+      this.db.exec(INITIAL_DDL)
 
       // Define migrations here
       const migrations: MigrationStep[] = [
@@ -238,7 +210,7 @@ export class LocalStore {
         {
           version: 3,
           up: () => {
-            execSql(this.db!, `
+            this.db!.exec(`
               CREATE TABLE IF NOT EXISTS dashboard_layouts (
                 id           TEXT    PRIMARY KEY,
                 name         TEXT    NOT NULL,
