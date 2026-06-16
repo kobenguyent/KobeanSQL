@@ -1,6 +1,4 @@
 import { create } from 'zustand'
-import { immer } from 'zustand/middleware/immer'
-import { enableMapSet } from 'immer'
 import type {
   ConnectionConfig,
   QueryTab,
@@ -24,6 +22,7 @@ const UPDATE_DOWNLOAD_POLL_MS = 250
 
 function loadPersistedTheme(): 'dark' | 'light' | 'system' | 'matrix' | 'cyberpunk' {
   try {
+    if (typeof localStorage === 'undefined') return 'dark'
     const stored = localStorage.getItem(THEME_STORAGE_KEY)
     if (stored === 'dark' || stored === 'light' || stored === 'system' || stored === 'matrix' || stored === 'cyberpunk') return stored
   } catch {/* ignore */}
@@ -53,9 +52,6 @@ function normalizeHistoryEntry(entry: unknown, index: number): QueryHistoryEntry
     error: typeof record.error === 'string' && record.error ? record.error : undefined
   }
 }
-
-// Required for Immer to handle Set and Map mutations inside producers
-enableMapSet()
 
 // Use window.db API (injected by preload)
 declare global {
@@ -249,7 +245,7 @@ interface AppState {
   setTabGroup(tabId: string, title: string | null, color?: string | null): void
   updateTabSql(tabId: string, sql: string): void
   updateTabConnection(tabId: string, connectionId: string): void
-  runQuery(tabId: string): Promise<void>
+  runQuery(tabId: string, overrideSql?: string): Promise<void>
   insertSnippet(tabId: string, snippet: string): void
   openTableInTab(connectionId: string, tableName: string, database: string, schema?: string, filter?: { column: string; value: unknown }): Promise<void>
   openProcedureInTab(connectionId: string, proc: ProcedureInfo): void
@@ -288,879 +284,364 @@ interface AppState {
   setStatus(msg: string | null, type?: AppState['statusType']): void
 }
 
-export const useAppStore = create<AppState>()(
-  immer((set, get) => ({
-    connections: [],
-    connectedIds: new Set(),
-    schema: {},
-    connectionVersions: {},
-    tabs: [],
-    activeTabId: null,
-    savedQueries: [],
-    queryHistory: [],
-    settings: {
-      queryLimit: 100,
-      updates: {
-        autoCheckEnabled: true,
-        checkIntervalHours: 24,
-        cache: {}
-      }
-    },
-    updateStatus: null,
-    sidebarWidth: 280,
-    isSidebarCollapsed: false,
-    theme: loadPersistedTheme(),
-    statusMessage: null,
-    statusType: 'info',
-    loadConnections: async () => {
-      const connections = await window.db.getConnections()
-      set((s) => {
-        s.connections = connections
-      })
-    },
+export const useAppStore = create<AppState>((set, get) => ({
+  connections: [],
+  connectedIds: new Set(),
+  schema: {},
+  connectionVersions: {},
+  tabs: [],
+  activeTabId: null,
+  savedQueries: [],
+  queryHistory: [],
+  settings: {
+    queryLimit: 100,
+    updates: { autoCheckEnabled: true, checkIntervalHours: 24, cache: {} }
+  },
+  updateStatus: null,
+  sidebarWidth: 280,
+  isSidebarCollapsed: false,
+  theme: loadPersistedTheme(),
+  statusMessage: null,
+  statusType: 'info',
 
-    saveConnection: async (config) => {
-      await window.db.saveConnection(config)
-      await get().loadConnections()
-    },
+  loadConnections: async () => {
+    const connections = await window.db.getConnections()
+    set({ connections })
+  },
 
-    deleteConnection: async (id) => {
-      await window.db.deleteConnection(id)
-      set((s) => {
-        s.connectedIds.delete(id)
-        delete s.schema[id]
-      })
-      await get().loadConnections()
-    },
+  saveConnection: async (config) => {
+    await window.db.saveConnection(config)
+    await get().loadConnections()
+  },
 
-    connect: async (config) => {
-      const result = await window.db.connect(config)
-      if (result.success) {
-        set((s) => {
-          s.connectedIds.add(config.id)
-          if (result.detectedType && result.detectedType !== config.type) {
-            const conn = s.connections.find((c) => c.id === config.id)
-            if (conn) {
-              conn.type = result.detectedType
-            }
-          }
-          if (!s.schema[config.id]) {
-            s.schema[config.id] = {
-              databases: [],
-              tables: {},
-              columns: {},
-              procedures: {},
-              loadingDatabases: false,
-              loadingTables: {},
-              loadingProcedures: {}
-            }
-          }
-        })
-        const finalType = result.detectedType || config.type
-        const typeLabel = finalType === 'mariadb' ? 'MariaDB' : finalType.charAt(0).toUpperCase() + finalType.slice(1)
-        get().setStatus(`Connected to ${config.name} (${typeLabel})`, 'success')
-        void window.db.addConnectionLog({
-          id: genId(),
-          connectionId: config.id,
-          connectionName: config.name,
-          event: 'connected',
-          timestamp: Date.now()
-        }).catch(() => {/* ignore */})
-        await get().loadDatabases(config.id)
-        // Fetch server version in background
-        window.db.getServerVersion(config.id).then(({ version }) => {
-          set((s) => {
-            if (s.connectedIds.has(config.id)) {
-              s.connectionVersions[config.id] = version
-            }
-          })
-        }).catch(() => {/* ignore */})
-      } else {
-        void window.db.addConnectionLog({
-          id: genId(),
-          connectionId: config.id,
-          connectionName: config.name,
-          event: 'failed',
-          timestamp: Date.now(),
-          error: result.error
-        }).catch(() => {/* ignore */})
-      }
-      return result
-    },
+  deleteConnection: async (id) => {
+    await window.db.deleteConnection(id)
+    const { connectedIds, schema } = get()
+    const nextIds = new Set(connectedIds)
+    nextIds.delete(id)
+    const nextSchema = { ...schema }
+    delete nextSchema[id]
+    set({ connectedIds: nextIds, schema: nextSchema })
+    await get().loadConnections()
+  },
 
-    disconnect: async (id) => {
-      await window.db.disconnect(id)
-      set((s) => {
-        s.connectedIds.delete(id)
-        delete s.schema[id]
-        delete s.connectionVersions[id]
-      })
-      const conn = get().connections.find((c) => c.id === id)
-      get().setStatus(`Disconnected from ${conn?.name}`, 'info')
-      void window.db.addConnectionLog({
-        id: genId(),
-        connectionId: id,
-        connectionName: conn?.name ?? id,
-        event: 'disconnected',
-        timestamp: Date.now()
-      }).catch(() => {/* ignore */})
-    },
-
-    handleConnectionLost: (id) => {
-      set((s) => {
-        s.connectedIds.delete(id)
-        delete s.schema[id]
-        delete s.connectionVersions[id]
-      })
-      const conn = get().connections.find((c) => c.id === id)
-      get().setStatus(`Connection to ${conn?.name ?? id} was lost`, 'error')
-      void window.db.addConnectionLog({
-        id: genId(),
-        connectionId: id,
-        connectionName: conn?.name ?? id,
-        event: 'disconnected',
-        timestamp: Date.now(),
-        error: 'Connection lost unexpectedly'
-      }).catch(() => {/* ignore */})
-    },
-
-    loadDatabases: async (connectionId) => {
-      set((s) => {
-        if (s.schema[connectionId]) {
-          s.schema[connectionId].loadingDatabases = true
-        }
-      })
-      try {
-        const databases = await window.db.getDatabases(connectionId)
-        set((s) => {
-          if (s.schema[connectionId]) {
-            s.schema[connectionId].databases = databases
-            s.schema[connectionId].loadingDatabases = false
-          }
-        })
-      } catch {
-        set((s) => {
-          if (s.schema[connectionId]) {
-            s.schema[connectionId].loadingDatabases = false
-          }
-        })
-      }
-    },
-
-    loadTables: async (connectionId, database) => {
-      set((s) => {
-        if (s.schema[connectionId]) {
-          s.schema[connectionId].loadingTables[database] = true
-        }
-      })
-      try {
-        const tables = await window.db.getTables(connectionId, database)
-        set((s) => {
-          if (s.schema[connectionId]) {
-            s.schema[connectionId].tables[database] = tables
-            s.schema[connectionId].loadingTables[database] = false
-          }
-        })
-        // Eagerly load columns for all tables in the background so that SQL
-        // autocomplete has field names available without the user needing to
-        // expand each table in the sidebar first.
-        for (const table of tables) {
-          const qualifiedTableName = table.schema ? `${table.schema}.${table.name}` : table.name
-          void get().loadColumns(connectionId, qualifiedTableName, database)
-        }
-      } catch {
-        set((s) => {
-          if (s.schema[connectionId]) {
-            s.schema[connectionId].loadingTables[database] = false
-          }
-        })
-      }
-    },
-
-    loadColumns: async (connectionId, table, database) => {
-      const key = database ? `${database}.${table}` : table
-      try {
-        const columns = await window.db.getColumns(connectionId, table, database)
-        set((s) => {
-          if (s.schema[connectionId]) {
-            s.schema[connectionId].columns[key] = columns
-          }
-        })
-      } catch {}
-    },
-
-    loadProcedures: async (connectionId, database) => {
-      set((s) => {
-        if (s.schema[connectionId]) {
-          s.schema[connectionId].loadingProcedures[database] = true
-        }
-      })
-      try {
-        const procedures = await window.db.getProcedures(connectionId, database)
-        set((s) => {
-          if (s.schema[connectionId]) {
-            s.schema[connectionId].procedures[database] = procedures
-            s.schema[connectionId].loadingProcedures[database] = false
-          }
-        })
-      } catch {
-        set((s) => {
-          if (s.schema[connectionId]) {
-            s.schema[connectionId].loadingProcedures[database] = false
-          }
-        })
-      }
-    },
-
-    newTab: (connectionId = null) => {
-      const id = genId()
-      const tabs = get().tabs
-      const tab: QueryTab = {
-        id,
-        title: getNextNewQueryTitle(tabs),
-        tabType: 'query',
-        connectionId: connectionId || tabs[tabs.length - 1]?.connectionId || null,
-        sql: '',
-        result: null,
-        isRunning: false,
-        isSaved: false,
-        lastSavedSql: ''
-      }
-      set((s) => {
-        s.tabs.push(tab)
-        s.activeTabId = id
-      })
-      return id
-    },
-
-    closeTab: (tabId) => {
-      const { tabs, activeTabId } = get()
-      const idx = tabs.findIndex((t) => t.id === tabId)
-      if (idx < 0) return
-      set((s) => {
-        s.tabs.splice(idx, 1)
-        if (s.tabs.length === 0) {
-          s.activeTabId = null
-        } else if (activeTabId === tabId) {
-          s.activeTabId = s.tabs[Math.min(idx, s.tabs.length - 1)].id
-        }
-      })
-    },
-
-    setActiveTab: (tabId) => {
-      set((s) => {
-        s.activeTabId = tabId
-      })
-    },
-
-    moveTab: (tabId, toIndex) => {
-      set((s) => {
-        const fromIndex = s.tabs.findIndex((t) => t.id === tabId)
-        if (fromIndex < 0) return
-        const [tab] = s.tabs.splice(fromIndex, 1)
-        const bounded = Math.max(0, Math.min(toIndex, s.tabs.length))
-        s.tabs.splice(bounded, 0, tab)
-      })
-    },
-
-    moveTabBlock: (tabIds, toIndex) => {
-      set((s) => {
-        if (tabIds.length === 0) return
-        const ids = new Set(tabIds)
-        const block = s.tabs.filter((t) => ids.has(t.id))
-        if (block.length === 0) return
-        s.tabs = s.tabs.filter((t) => !ids.has(t.id))
-        const bounded = Math.max(0, Math.min(toIndex, s.tabs.length))
-        s.tabs.splice(bounded, 0, ...block)
-      })
-    },
-
-    setTabColor: (tabId, color) => {
-      set((s) => {
-        const tab = s.tabs.find((t) => t.id === tabId)
-        if (tab) tab.tabColor = color || undefined
-      })
-    },
-
-    setTabGroup: (tabId, title, color) => {
-      set((s) => {
-        const tab = s.tabs.find((t) => t.id === tabId)
-        if (!tab) return
-        const nextTitle = title?.trim() ?? ''
-        tab.groupTitle = nextTitle ? nextTitle : undefined
-        if (color !== undefined) {
-          tab.groupColor = color || undefined
-        }
-        if (!tab.groupTitle) {
-          tab.groupColor = undefined
-        }
-      })
-    },
-
-    updateTabSql: (tabId, sql) => {
-      set((s) => {
-        const tab = s.tabs.find((t) => t.id === tabId)
-        if (tab) tab.sql = sql
-      })
-    },
-
-    updateTabConnection: (tabId, connectionId) => {
-      set((s) => {
-        const tab = s.tabs.find((t) => t.id === tabId)
-        if (tab) tab.connectionId = connectionId
-      })
-    },
-
-    runQuery: async (tabId) => {
-      const { tabs, connectedIds } = get()
-      const tab = tabs.find((t) => t.id === tabId)
-      if (!tab || !tab.connectionId) {
-        get().setStatus('No database connection selected', 'warning')
-        return
-      }
-      if (!connectedIds.has(tab.connectionId)) {
-        get().setStatus('Not connected to database', 'error')
-        return
-      }
-      set((s) => {
-        const t = s.tabs.find((t) => t.id === tabId)
-        if (t) t.isRunning = true
-      })
-      try {
-        const result = await window.db.query(tab.connectionId, tab.sql)
-        set((s) => {
-          const t = s.tabs.find((t) => t.id === tabId)
-          if (t) {
-            t.result = result
-            t.isRunning = false
-          }
-        })
-        const conn = get().connections.find((c) => c.id === tab.connectionId)
-        get().addToHistory({
-          id: genId(),
-          sql: tab.sql,
-          connectionId: tab.connectionId,
-          connectionName: conn?.name ?? 'Unknown',
-          timestamp: Date.now(),
-          duration: result.duration,
-          rowCount: result.rowCount,
-          error: result.error
-        })
-        if (result.error) {
-          get().setStatus(result.error, 'error')
-        } else {
-          get().setStatus(
-            `${result.rowCount} row${result.rowCount !== 1 ? 's' : ''} in ${result.duration}ms`,
-            'success'
-          )
-        }
-      } catch (err) {
-        set((s) => {
-          const t = s.tabs.find((t) => t.id === tabId)
-          if (t) t.isRunning = false
-        })
-        const conn = get().connections.find((c) => c.id === tab.connectionId)
-        get().addToHistory({
-          id: genId(),
-          sql: tab.sql,
-          connectionId: tab.connectionId,
-          connectionName: conn?.name ?? 'Unknown',
-          timestamp: Date.now(),
-          duration: 0,
-          rowCount: 0,
-          error: (err as Error).message
-        })
-        get().setStatus((err as Error).message, 'error')
-      }
-    },
-
-    insertSnippet: (tabId, snippet) => {
-      set((s) => {
-        const tab = s.tabs.find((t) => t.id === tabId)
-        if (tab) {
-          tab.sql = tab.sql ? `${tab.sql}\n${snippet}` : snippet
-        }
-      })
-    },
-
-    openTableInTab: async (connectionId, tableName, database, schema, filter) => {
-      const conn = get().connections.find((c) => c.id === connectionId)
-      const dbType: DatabaseType = conn?.type ?? 'postgres'
-      const qualifier = schema ?? database
-      const { settings } = get()
-      const limit = settings.queryLimit || 100
-      const sql = buildSelectTableSql(dbType, tableName, qualifier, limit, filter)
-      const id = genId()
-      const tabTitle = filter ? `${tableName} (${filter.column}=${filter.value})` : tableName
-      const tab: QueryTab = {
-        id,
-        title: tabTitle,
-        tableName,
-        tabType: 'table',
-        connectionId,
-        sql,
-        result: null,
-        isRunning: false,
-        isSaved: false,
-        database,
-        schema
-      }
-      set((s) => {
-        s.tabs.push(tab)
-        s.activeTabId = id
-      })
-      await get().runQuery(id)
-    },
-
-    openProcedureInTab: (connectionId, proc) => {
-      const conn = get().connections.find((c) => c.id === connectionId)
-      const dbType: DatabaseType = conn?.type ?? 'postgres'
-      const qualifiedName = proc.schema
-        ? `${quoteIdentifier(proc.schema, dbType)}.${quoteIdentifier(proc.name, dbType)}`
-        : quoteIdentifier(proc.name, dbType)
-      const sql = buildProcedureCallSql(dbType, proc.name, proc.type, proc.schema)
-      const sqlWithComment =
-        proc.type === 'function'
-          ? `-- Function: ${qualifiedName}\n${sql}`
-          : `-- Procedure: ${qualifiedName}\n${sql}`
-
-      const id = genId()
-      const tab: QueryTab = {
-        id,
-        title: proc.name,
-        tabType: 'procedure',
-        connectionId,
-        sql: sqlWithComment,
-        result: null,
-        isRunning: false,
-        isSaved: false
-      }
-      set((s) => {
-        s.tabs.push(tab)
-        s.activeTabId = id
-      })
-    },
-    loadSavedQueries: async () => {
-      const queries = await window.db.getSavedQueries()
-      set((s) => {
-        s.savedQueries = queries
-      })
-    },
-
-    saveCurrentQuery: async (tabId, name, category) => {
-      const tab = get().tabs.find((t) => t.id === tabId)
-      if (!tab || !tab.sql.trim()) return
-      const query: SavedQuery = {
-        id: genId(),
-        name,
-        sql: tab.sql,
-        createdAt: Date.now(),
-        ...(category ? { category } : {})
-      }
-      await window.db.saveQuery(query)
-      await get().loadSavedQueries()
-      set((s) => {
-        const t = s.tabs.find((x) => x.id === tabId)
-        if (t) {
-          t.title = name
-          t.isSaved = true
-          t.lastSavedSql = t.sql
-        }
-      })
-      get().setStatus(`Query saved: ${name}`, 'success')
-    },
-
-    deleteSavedQuery: async (id) => {
-      await window.db.deleteQuery(id)
-      set((s) => {
-        s.savedQueries = s.savedQueries.filter((q) => q.id !== id)
-      })
-    },
-
-    updateSavedQuery: async (query) => {
-      await window.db.saveQuery(query)
-      set((s) => {
-        const idx = s.savedQueries.findIndex((q) => q.id === query.id)
-        if (idx >= 0) s.savedQueries[idx] = query
-      })
-    },
-
-    importConnections: async () => {
-      try {
-        const result = await window.db.importConnections()
-        if (result.canceled) return
-        if (!result.success) {
-          get().setStatus(`Failed to import connections${result.error ? `: ${result.error}` : ''}`, 'error')
-          return
-        }
-        await get().loadConnections()
-        get().setStatus(
-          `Imported ${result.imported ?? 0}, replaced ${result.replaced ?? 0}, skipped ${result.skippedDuplicates ?? 0} duplicates`,
-          'success'
-        )
-      } catch (error) {
-        get().setStatus(`Failed to import connections: ${getErrorMessage(error)}`, 'error')
-      }
-    },
-
-    exportConnections: async (includePasswords = false) => {
-      if (get().connections.length === 0) {
-        get().setStatus('No connections to export', 'warning')
-        return
-      }
-      try {
-        const result = await window.db.exportConnections(includePasswords)
-        if (result.canceled) return
-        if (!result.success) {
-          get().setStatus(`Failed to export connections${result.error ? `: ${result.error}` : ''}`, 'error')
-          return
-        }
-        get().setStatus(`Exported ${result.count ?? 0} connection(s)`, 'success')
-      } catch (error) {
-        get().setStatus(`Failed to export connections: ${getErrorMessage(error)}`, 'error')
-      }
-    },
-
-    openLogs: async () => {
-      try {
-        const result = await window.db.openLogs()
-        if (result.success) {
-          get().setStatus('Opened logs folder', 'info')
-        }
-      } catch (error) {
-        get().setStatus((error as Error).message, 'error')
-      }
-    },
-
-    openSavedQuery: (query) => {
-      const { tabs, activeTabId } = get()
-      const activeTab = tabs.find((t) => t.id === activeTabId)
-
-      const existingTab = tabs.find(
-        (t) => t.tabType === 'query' && t.title === query.name && t.lastSavedSql === query.sql
-      )
-      if (existingTab) {
-        set((s) => {
-          s.activeTabId = existingTab.id
-        })
-        return
-      }
-
-      if (activeTab?.tabType === 'query') {
-        set((s) => {
-          const target = s.tabs.find((t) => t.id === activeTab.id)
-          if (!target) return
-          target.title = query.name
-          target.sql = query.sql
-          target.result = null
-          target.isRunning = false
-          target.isSaved = true
-          target.lastSavedSql = query.sql
-          s.activeTabId = target.id
-        })
-        return
-      }
-
-      const id = genId()
-      const tab: QueryTab = {
-        id,
-        title: query.name,
-        tabType: 'query',
-        connectionId: activeTab?.connectionId || null,
-        sql: query.sql,
-        result: null,
-        isRunning: false,
-        isSaved: true,
-        lastSavedSql: query.sql
-      }
-      set((s) => {
-        s.tabs.push(tab)
-        s.activeTabId = id
-      })
-    },
-
-    loadHistory: async () => {
-      try {
-        const entries = await window.db.getPersistedHistory(MAX_QUERY_HISTORY)
-        const normalized = entries.map((entry, index) => normalizeHistoryEntry(entry, index))
-        set((s) => {
-          s.queryHistory = normalized
-        })
-      } catch {/* ignore — degraded gracefully if local store is unavailable */}
-    },
-
-    addToHistory: (entry) => {
-      set((s) => {
-        s.queryHistory.unshift(entry)
-        if (s.queryHistory.length > MAX_QUERY_HISTORY) {
-          s.queryHistory.length = MAX_QUERY_HISTORY
-        }
-      })
-      // Persist asynchronously — failure is non-fatal
-      void window.db.addToPersistedHistory(entry).catch(() => {/* ignore */})
-    },
-
-    clearHistory: async () => {
-      set((s) => {
-        s.queryHistory = []
-      })
-      try {
-        await window.db.clearPersistedHistory()
-      } catch {/* ignore */}
-    },
-
-    openHistoryEntry: (entry) => {
-      const id = genId()
-      const { tabs, activeTabId } = get()
-      const activeTab = tabs.find((t) => t.id === activeTabId)
-      const tab: QueryTab = {
-        id,
-        title: 'History Query',
-        tabType: 'query',
-        connectionId: entry.connectionId ?? activeTab?.connectionId ?? null,
-        sql: entry.sql,
-        result: null,
-        isRunning: false,
-        isSaved: false,
-        lastSavedSql: entry.sql
-      }
-      set((s) => {
-        s.tabs.push(tab)
-        s.activeTabId = id
-      })
-    },
-
-    loadSettings: async () => {
-      try {
-        const s = await window.db.getSettings()
-        set((state) => {
-          state.settings = s
-        })
-        if (s.language) {
-          setLocale(s.language)
-        }
-        await get().loadUpdateStatus()
-      } catch {/* ignore */}
-    },
-
-    updateSettings: async (partial) => {
-      const merged = {
-        ...get().settings,
-        ...partial,
-        updates: {
-          ...get().settings.updates,
-          ...(partial.updates ?? {})
+  connect: async (config) => {
+    const result = await window.db.connect(config)
+    if (result.success) {
+      const { connectedIds, schema, connections } = get()
+      const nextIds = new Set(connectedIds).add(config.id)
+      const nextConnections = result.detectedType && result.detectedType !== config.type
+        ? connections.map(c => c.id === config.id ? { ...c, type: result.detectedType! } : c)
+        : connections
+      const nextSchema = { ...schema }
+      if (!nextSchema[config.id]) {
+        nextSchema[config.id] = {
+          databases: [], tables: {}, columns: {}, procedures: {},
+          loadingDatabases: false, loadingTables: {}, loadingProcedures: {}
         }
       }
-      // Sanitize queryLimit to match the server-side enforced range (1–10000)
-      const rawLimit = Number(merged.queryLimit)
-      const queryLimit = Number.isFinite(rawLimit)
-        ? Math.max(1, Math.min(10000, Math.floor(rawLimit)))
-        : get().settings.queryLimit
-      const rawInterval = Number(merged.updates.checkIntervalHours)
-      const checkIntervalHours = Number.isFinite(rawInterval)
-        ? Math.max(6, Math.min(168, Math.floor(rawInterval)))
-        : get().settings.updates.checkIntervalHours
-      const next = {
-        ...merged,
-        queryLimit,
-        updates: {
-          ...merged.updates,
-          autoCheckEnabled: !!merged.updates.autoCheckEnabled,
-          checkIntervalHours
+      set({ connectedIds: nextIds, connections: nextConnections, schema: nextSchema })
+      
+      const finalType = result.detectedType || config.type
+      const typeLabel = finalType === 'mariadb' ? 'MariaDB' : finalType.charAt(0).toUpperCase() + finalType.slice(1)
+      get().setStatus(`Connected to ${config.name} (${typeLabel})`, 'success')
+      
+      void window.db.addConnectionLog({ id: genId(), connectionId: config.id, connectionName: config.name, event: 'connected', timestamp: Date.now() }).catch(() => {})
+      await get().loadDatabases(config.id)
+      
+      window.db.getServerVersion(config.id).then(({ version }) => {
+        if (get().connectedIds.has(config.id)) {
+          set(s => ({ connectionVersions: { ...s.connectionVersions, [config.id]: version } }))
         }
-      }
-      set((s) => {
-        s.settings = next
-      })
-      try {
-        await window.db.saveSettings(next)
-        await get().loadUpdateStatus()
-      } catch {/* ignore */}
-    },
-
-    loadUpdateStatus: async () => {
-      try {
-        const status = await window.db.getUpdateStatus()
-        set((s) => {
-          s.updateStatus = status
-        })
-      } catch {/* ignore */}
-    },
-
-    checkForUpdatesNow: async () => {
-      try {
-        const status = await window.db.checkForUpdatesNow()
-        if (status) {
-          set((s) => {
-            s.updateStatus = status
-          })
-          if (status.updateAvailable) {
-            const version = (status.latestVersion ?? '').replace(/^v/i, '')
-            get().setStatus(`Update available: v${version}`, 'info')
-          } else if (status.error) {
-            get().setStatus(status.error, 'warning')
-          } else {
-            get().setStatus('You are up to date', 'success')
-          }
-        }
-      } catch (error) {
-        get().setStatus(getErrorMessage(error), 'error')
-      }
-    },
-
-    ignoreUpdateVersion: async (version) => {
-      try {
-        const status = await window.db.ignoreUpdateVersion(version)
-        if (status) {
-          set((s) => {
-            s.updateStatus = status
-          })
-        }
-      } catch (error) {
-        get().setStatus(getErrorMessage(error), 'error')
-      }
-    },
-
-    dismissUpdateVersion: async (version) => {
-      try {
-        const status = await window.db.dismissUpdateVersion(version)
-        if (status) {
-          set((s) => {
-            s.updateStatus = status
-          })
-        }
-      } catch (error) {
-        get().setStatus(getErrorMessage(error), 'error')
-      }
-    },
-
-    openUpdateRelease: async (url) => {
-      try {
-        const result = await window.db.openUpdateRelease(url)
-        if (result?.success) {
-          get().setStatus('Opened release page', 'info')
-        } else {
-          get().setStatus('Failed to open release page', 'warning')
-        }
-      } catch (error) {
-        get().setStatus(getErrorMessage(error), 'error')
-      }
-    },
-
-    downloadUpdate: async () => {
-      let pollTimer: number | undefined
-      const stopPolling = () => {
-        if (pollTimer !== undefined) {
-          window.clearInterval(pollTimer)
-          pollTimer = undefined
-        }
-      }
-      const syncStatus = async () => {
-        try {
-          const polledStatus = await window.db.getUpdateStatus()
-          if (polledStatus) {
-            set((s) => {
-              s.updateStatus = polledStatus
-            })
-            if (polledStatus.downloadState && polledStatus.downloadState !== 'downloading') {
-              stopPolling()
-            }
-          }
-        } catch (error) {
-          console.debug('Failed to poll update download status', error)
-        }
-      }
-      try {
-        set((s) => {
-          if (s.updateStatus) {
-            s.updateStatus.downloadState = 'downloading'
-            s.updateStatus.downloadProgress = 0
-            s.updateStatus.downloadError = undefined
-          }
-        })
-        pollTimer = window.setInterval(() => {
-          void syncStatus()
-        }, UPDATE_DOWNLOAD_POLL_MS)
-        const status = await window.db.downloadUpdate()
-        stopPolling()
-        if (status) {
-          set((s) => {
-            s.updateStatus = status
-          })
-          if (status.downloadState === 'error') {
-            get().setStatus(status.downloadError ?? 'Download failed', 'error')
-          }
-        }
-      } catch (error) {
-        stopPolling()
-        const message = getErrorMessage(error)
-        set((s) => {
-          if (s.updateStatus) {
-            s.updateStatus.downloadState = 'error'
-            s.updateStatus.downloadError = message
-          }
-        })
-        get().setStatus(message, 'error')
-      }
-    },
-
-    installUpdate: async () => {
-      try {
-        const result = await window.db.installUpdate()
-        if (!result?.success) {
-          get().setStatus(result?.error ?? 'Install failed', 'error')
-        }
-      } catch (error) {
-        get().setStatus(getErrorMessage(error), 'error')
-      }
-    },
-
-    setSidebarWidth: (w) => {
-      set((s) => {
-        s.sidebarWidth = w
-      })
-    },
-
-    setSidebarCollapsed: (v) => {
-      set((s) => {
-        s.isSidebarCollapsed = v
-      })
-    },
-
-    setTheme: (t) => {
-      set((s) => {
-        s.theme = t
-      })
-      try {
-        localStorage.setItem(THEME_STORAGE_KEY, t)
-      } catch {/* ignore */}
-    },
-
-    setStatus: (msg, type = 'info') => {
-      set((s) => {
-        s.statusMessage = msg
-        s.statusType = type
-      })
-      // Auto-clear error and success messages so they don't persist forever
-      if (msg !== null && (type === 'error' || type === 'success')) {
-        setTimeout(() => {
-          set((s) => {
-            if (s.statusMessage === msg) {
-              s.statusMessage = null
-            }
-          })
-        }, 6000)
-      }
+      }).catch(() => {})
+    } else {
+      void window.db.addConnectionLog({ id: genId(), connectionId: config.id, connectionName: config.name, event: 'failed', timestamp: Date.now(), error: result.error }).catch(() => {})
     }
-  }))
-)
+    return result
+  },
 
-// Register the connection-lost push listener so the UI reflects unexpected disconnections
+  disconnect: async (id) => {
+    await window.db.disconnect(id)
+    const { connectedIds, schema, connectionVersions, connections } = get()
+    const nextIds = new Set(connectedIds)
+    nextIds.delete(id)
+    const nextSchema = { ...schema }; delete nextSchema[id]
+    const nextVersions = { ...connectionVersions }; delete nextVersions[id]
+    set({ connectedIds: nextIds, schema: nextSchema, connectionVersions: nextVersions })
+    const conn = connections.find(c => c.id === id)
+    get().setStatus(`Disconnected from ${conn?.name}`, 'info')
+    void window.db.addConnectionLog({ id: genId(), connectionId: id, connectionName: conn?.name ?? id, event: 'disconnected', timestamp: Date.now() }).catch(() => {})
+  },
+
+  handleConnectionLost: (id) => {
+    const { connectedIds, schema, connectionVersions, connections } = get()
+    const nextIds = new Set(connectedIds)
+    nextIds.delete(id)
+    const nextSchema = { ...schema }; delete nextSchema[id]
+    const nextVersions = { ...connectionVersions }; delete nextVersions[id]
+    set({ connectedIds: nextIds, schema: nextSchema, connectionVersions: nextVersions })
+    const conn = connections.find(c => c.id === id)
+    get().setStatus(`Connection to ${conn?.name ?? id} was lost`, 'error')
+    void window.db.addConnectionLog({ id: genId(), connectionId: id, connectionName: conn?.name ?? id, event: 'disconnected', timestamp: Date.now(), error: 'Connection lost' }).catch(() => {})
+  },
+
+  loadDatabases: async (connectionId) => {
+    const { schema } = get()
+    if (!schema[connectionId]) return
+    set({ schema: { ...schema, [connectionId]: { ...schema[connectionId], loadingDatabases: true } } })
+    try {
+      const databases = await window.db.getDatabases(connectionId)
+      set(s => ({ schema: { ...s.schema, [connectionId]: { ...s.schema[connectionId], databases, loadingDatabases: false } } }))
+    } catch {
+      set(s => ({ schema: { ...s.schema, [connectionId]: { ...s.schema[connectionId], loadingDatabases: false } } }))
+    }
+  },
+
+  loadTables: async (connectionId, database) => {
+    const { schema } = get()
+    if (!schema[connectionId]) return
+    set({ schema: { ...schema, [connectionId]: { ...schema[connectionId], loadingTables: { ...schema[connectionId].loadingTables, [database]: true } } } })
+    try {
+      const tables = await window.db.getTables(connectionId, database)
+      set(s => ({ schema: { ...s.schema, [connectionId]: { ...s.schema[connectionId], tables: { ...s.schema[connectionId].tables, [database]: tables }, loadingTables: { ...s.schema[connectionId].loadingTables, [database]: false } } } }))
+      for (const table of tables) {
+        void get().loadColumns(connectionId, table.schema ? `${table.schema}.${table.name}` : table.name, database)
+      }
+    } catch {
+      set(s => ({ schema: { ...s.schema, [connectionId]: { ...s.schema[connectionId], loadingTables: { ...s.schema[connectionId].loadingTables, [database]: false } } } }))
+    }
+  },
+
+  loadColumns: async (connectionId, table, database) => {
+    const key = database ? `${database}.${table}` : table
+    try {
+      const columns = await window.db.getColumns(connectionId, table, database)
+      set(s => (s.schema[connectionId] ? { schema: { ...s.schema, [connectionId]: { ...s.schema[connectionId], columns: { ...s.schema[connectionId].columns, [key]: columns } } } } : {}))
+    } catch {}
+  },
+
+  loadProcedures: async (connectionId, database) => {
+    const { schema } = get()
+    if (!schema[connectionId]) return
+    set({ schema: { ...schema, [connectionId]: { ...schema[connectionId], loadingProcedures: { ...schema[connectionId].loadingProcedures, [database]: true } } } })
+    try {
+      const procedures = await window.db.getProcedures(connectionId, database)
+      set(s => ({ schema: { ...s.schema, [connectionId]: { ...s.schema[connectionId], procedures: { ...s.schema[connectionId].procedures, [database]: procedures }, loadingProcedures: { ...s.schema[connectionId].loadingProcedures, [database]: false } } } }))
+    } catch {
+      set(s => ({ schema: { ...s.schema, [connectionId]: { ...s.schema[connectionId], loadingProcedures: { ...s.schema[connectionId].loadingProcedures, [database]: false } } } }))
+    }
+  },
+
+  newTab: (connectionId = null) => {
+    const id = genId(), { tabs } = get()
+    const tab: QueryTab = { id, title: getNextNewQueryTitle(tabs), tabType: 'query', connectionId: connectionId || tabs[tabs.length - 1]?.connectionId || null, sql: '', result: null, isRunning: false, isSaved: false, lastSavedSql: '' }
+    set({ tabs: [...tabs, tab], activeTabId: id })
+    return id
+  },
+
+  closeTab: (tabId) => {
+    const { tabs, activeTabId } = get()
+    const idx = tabs.findIndex(t => t.id === tabId)
+    if (idx < 0) return
+    const nextTabs = tabs.filter(t => t.id !== tabId)
+    set({ tabs: nextTabs, activeTabId: nextTabs.length === 0 ? null : (activeTabId === tabId ? nextTabs[Math.min(idx, nextTabs.length - 1)].id : activeTabId) })
+  },
+
+  setActiveTab: (activeTabId) => set({ activeTabId }),
+
+  moveTab: (tabId, toIndex) => {
+    const { tabs } = get(), fromIndex = tabs.findIndex(t => t.id === tabId)
+    if (fromIndex < 0) return
+    const nextTabs = [...tabs], [tab] = nextTabs.splice(fromIndex, 1)
+    nextTabs.splice(Math.max(0, Math.min(toIndex, nextTabs.length)), 0, tab)
+    set({ tabs: nextTabs })
+  },
+
+  moveTabBlock: (tabIds, toIndex) => {
+    const { tabs } = get(), ids = new Set(tabIds)
+    const block = tabs.filter(t => ids.has(t.id))
+    if (block.length === 0) return
+    const nextTabs = tabs.filter(t => !ids.has(t.id))
+    nextTabs.splice(Math.max(0, Math.min(toIndex, nextTabs.length)), 0, ...block)
+    set({ tabs: nextTabs })
+  },
+
+  setTabColor: (tabId, color) => set(s => ({ tabs: s.tabs.map(t => t.id === tabId ? { ...t, tabColor: color || undefined } : t) })),
+
+  setTabGroup: (tabId, title, color) => set(s => ({
+    tabs: s.tabs.map(t => {
+      if (t.id !== tabId) return t
+      const nextTitle = title?.trim() ?? ''
+      return { ...t, groupTitle: nextTitle || undefined, groupColor: (nextTitle && color !== undefined) ? (color || undefined) : (nextTitle ? t.groupColor : undefined) }
+    })
+  })),
+
+  updateTabSql: (tabId, sql) => set(s => ({ tabs: s.tabs.map(t => t.id === tabId ? { ...t, sql } : t) })),
+
+  updateTabConnection: (tabId, connectionId) => set(s => ({ tabs: s.tabs.map(t => t.id === tabId ? { ...t, connectionId } : t) })),
+
+  runQuery: async (tabId, overrideSql) => {
+    const { tabs, connectedIds } = get(), tab = tabs.find(t => t.id === tabId)
+    if (!tab?.connectionId) return get().setStatus('No connection', 'warning')
+    if (!connectedIds.has(tab.connectionId)) return get().setStatus('Not connected', 'error')
+    
+    const sqlToRun = overrideSql || tab.sql
+    if (!sqlToRun.trim()) return
+
+    set(s => ({ tabs: s.tabs.map(t => t.id === tabId ? { ...t, isRunning: true } : t) }))
+    try {
+      const result = await window.db.query(tab.connectionId, sqlToRun)
+      set(s => ({ tabs: s.tabs.map(t => t.id === tabId ? { ...t, result, isRunning: false } : t) }))
+      const conn = get().connections.find(c => c.id === tab.connectionId)
+      get().addToHistory({ id: genId(), sql: sqlToRun, connectionId: tab.connectionId, connectionName: conn?.name ?? 'Unknown', timestamp: Date.now(), duration: result.duration, rowCount: result.rowCount, error: result.error })
+      result.error ? get().setStatus(result.error, 'error') : get().setStatus(`${result.rowCount} rows in ${result.duration}ms`, 'success')
+    } catch (err) {
+      set(s => ({ tabs: s.tabs.map(t => t.id === tabId ? { ...t, isRunning: false } : t) }))
+      get().setStatus((err as Error).message, 'error')
+    }
+  },
+
+  insertSnippet: (tabId, snippet) => set(s => ({ tabs: s.tabs.map(t => t.id === tabId ? { ...t, sql: t.sql ? `${t.sql}\n${snippet}` : snippet } : t) })),
+
+  openTableInTab: async (connectionId, tableName, database, schema, filter) => {
+    const dbType = get().connections.find(c => c.id === connectionId)?.type ?? 'postgres'
+    const limit = get().settings.queryLimit || 100
+    const sql = buildSelectTableSql(dbType, tableName, schema ?? database, limit, filter)
+    const id = genId()
+    set(s => ({ tabs: [...s.tabs, { id, title: filter ? `${tableName} (${filter.column}=${filter.value})` : tableName, tableName, tabType: 'table', connectionId, sql, result: null, isRunning: false, isSaved: false, database, schema }], activeTabId: id }))
+    await get().runQuery(id, sql)
+    },
+
+  openProcedureInTab: (connectionId, proc) => {
+    const dbType = get().connections.find(c => c.id === connectionId)?.type ?? 'postgres'
+    const sql = buildProcedureCallSql(dbType, proc.name, proc.type, proc.schema)
+    const id = genId()
+    set(s => ({ tabs: [...s.tabs, { id, title: proc.name, tabType: 'procedure', connectionId, sql: `-- ${proc.type}: ${proc.name}\n${sql}`, result: null, isRunning: false, isSaved: false }], activeTabId: id }))
+  },
+
+  loadSavedQueries: async () => set({ savedQueries: await window.db.getSavedQueries() }),
+
+  saveCurrentQuery: async (tabId, name, category) => {
+    const tab = get().tabs.find(t => t.id === tabId)
+    if (!tab?.sql.trim()) return
+    const query = { id: genId(), name, sql: tab.sql, createdAt: Date.now(), ...(category ? { category } : {}) }
+    await window.db.saveQuery(query)
+    await get().loadSavedQueries()
+    set(s => ({ tabs: s.tabs.map(t => t.id === tabId ? { ...t, title: name, isSaved: true, lastSavedSql: t.sql } : t) }))
+    get().setStatus(`Saved: ${name}`, 'success')
+  },
+
+  deleteSavedQuery: async (id) => {
+    await window.db.deleteQuery(id)
+    set(s => ({ savedQueries: s.savedQueries.filter(q => q.id !== id) }))
+  },
+
+  updateSavedQuery: async (query) => {
+    await window.db.saveQuery(query)
+    set(s => ({ savedQueries: s.savedQueries.map(q => q.id === query.id ? query : q) }))
+  },
+
+  importConnections: async () => {
+    const res = await window.db.importConnections()
+    if (!res.canceled && res.success) await get().loadConnections()
+  },
+
+  exportConnections: async (pwd) => {
+    const res = await window.db.exportConnections(pwd)
+    if (!res.canceled && res.success) get().setStatus(`Exported ${res.count}`, 'success')
+  },
+
+  openLogs: async () => { if ((await window.db.openLogs()).success) get().setStatus('Opened logs', 'info') },
+
+  openSavedQuery: (q) => {
+    const { tabs, activeTabId } = get(), active = tabs.find(t => t.id === activeTabId)
+    const existing = tabs.find(t => t.tabType === 'query' && t.title === q.name && t.lastSavedSql === q.sql)
+    if (existing) return set({ activeTabId: existing.id })
+    if (active?.tabType === 'query') {
+      set(s => ({ tabs: s.tabs.map(t => t.id === active.id ? { ...t, title: q.name, sql: q.sql, result: null, isRunning: false, isSaved: true, lastSavedSql: q.sql } : t), activeTabId: active.id }))
+    } else {
+      const id = genId()
+      set(s => ({ tabs: [...s.tabs, { id, title: q.name, tabType: 'query', connectionId: active?.connectionId || null, sql: q.sql, result: null, isRunning: false, isSaved: true, lastSavedSql: q.sql }], activeTabId: id }))
+    }
+  },
+
+  loadHistory: async () => set({ queryHistory: (await window.db.getPersistedHistory(MAX_QUERY_HISTORY)).map(normalizeHistoryEntry) }),
+
+  addToHistory: (entry) => {
+    set(s => {
+      const next = [entry, ...s.queryHistory]
+      if (next.length > MAX_QUERY_HISTORY) next.length = MAX_QUERY_HISTORY
+      return { queryHistory: next }
+    })
+    void window.db.addToPersistedHistory(entry).catch(() => {})
+  },
+
+  clearHistory: async () => {
+    set({ queryHistory: [] })
+    await window.db.clearPersistedHistory().catch(() => {})
+  },
+
+  openHistoryEntry: (e) => {
+    const id = genId(), { tabs, activeTabId } = get()
+    set(s => ({ tabs: [...s.tabs, { id, title: 'History Query', tabType: 'query', connectionId: e.connectionId ?? tabs.find(t => t.id === activeTabId)?.connectionId ?? null, sql: e.sql, result: null, isRunning: false, isSaved: false, lastSavedSql: e.sql }], activeTabId: id }))
+  },
+
+  loadSettings: async () => {
+    const s = await window.db.getSettings()
+    set({ settings: s })
+    if (s.language) setLocale(s.language)
+    await get().loadUpdateStatus()
+  },
+
+  updateSettings: async (p) => {
+    const next = { ...get().settings, ...p, updates: { ...get().settings.updates, ...(p.updates || {}) } }
+    set({ settings: next })
+    await window.db.saveSettings(next)
+    await get().loadUpdateStatus()
+  },
+
+  loadUpdateStatus: async () => set({ updateStatus: await window.db.getUpdateStatus() }),
+
+  checkForUpdatesNow: async () => {
+    const s = await window.db.checkForUpdatesNow()
+    if (s) set({ updateStatus: s })
+  },
+
+  ignoreUpdateVersion: async (v) => {
+    const s = await window.db.ignoreUpdateVersion(v)
+    if (s) set({ updateStatus: s })
+  },
+
+  dismissUpdateVersion: async (v) => {
+    const s = await window.db.dismissUpdateVersion(v)
+    if (s) set({ updateStatus: s })
+  },
+
+  openUpdateRelease: async (u) => { await window.db.openUpdateRelease(u) },
+
+  downloadUpdate: async () => {
+    set(s => ({ updateStatus: s.updateStatus ? { ...s.updateStatus, downloadState: 'downloading', downloadProgress: 0 } : null }))
+    const s = await window.db.downloadUpdate()
+    if (s) set({ updateStatus: s })
+  },
+
+  installUpdate: async () => { await window.db.installUpdate() },
+
+  setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+  setSidebarCollapsed: (isSidebarCollapsed) => set({ isSidebarCollapsed }),
+  setTheme: (theme) => {
+    set({ theme })
+    localStorage.setItem(THEME_STORAGE_KEY, theme)
+  },
+  setStatus: (statusMessage, statusType = 'info') => {
+    set({ statusMessage, statusType })
+    if (statusMessage && (statusType === 'error' || statusType === 'success')) {
+      setTimeout(() => set(s => s.statusMessage === statusMessage ? { statusMessage: null } : {}), 6000)
+    }
+  }
+}))
+
+// Register listener
 if (typeof window !== 'undefined' && window.db?.onConnectionLost) {
-  const runtimeWindow = window as Window & { __kobeansqlConnectionLostUnsubscribe?: () => void }
-  runtimeWindow.__kobeansqlConnectionLostUnsubscribe?.()
-  runtimeWindow.__kobeansqlConnectionLostUnsubscribe = window.db.onConnectionLost((connectionId: string) => {
-    useAppStore.getState().handleConnectionLost(connectionId)
-  })
+  window.db.onConnectionLost((id: string) => useAppStore.getState().handleConnectionLost(id))
 }

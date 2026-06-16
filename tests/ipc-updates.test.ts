@@ -28,11 +28,16 @@ vi.mock('../src/main/store', () => ({
   importConnectionsFromPath: vi.fn()
 }))
 
-vi.mock('../src/main/ai/service', () => ({
-  createLocalAIService: vi.fn(() => ({
+const MockAIService = vi.fn().mockImplementation(function() {
+  return {
     getSettings: vi.fn(() => ({})),
     runTask: vi.fn()
-  }))
+  }
+})
+;(MockAIService as any).validateUrl = vi.fn()
+
+vi.mock('../src/main/ai/service', () => ({
+  AIService: MockAIService
 }))
 
 function getTrustedEvent(): { senderFrame: { url: string } } {
@@ -81,6 +86,8 @@ describe('IPC updates channels', () => {
       queryLimit: 100,
       updates: { autoCheckEnabled: true, checkIntervalHours: 24, cache: {} }
     })
+    ;(MockAIService as any).validateUrl.mockReset()
+    ;(MockAIService as any).validateUrl.mockImplementation(() => undefined)
   })
 
   it('wires update status and actions through update service', async () => {
@@ -273,6 +280,7 @@ describe('IPC ai:list-models channel', () => {
   })
 
   it('rejects non-local URLs before fetch', async () => {
+    ;(MockAIService as any).validateUrl.mockReturnValue('local-only policy violation')
     const { registerIpcHandlers } = await import('../src/main/ipc')
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
@@ -293,6 +301,7 @@ describe('IPC ai:list-models channel', () => {
   })
 
   it('returns a failure payload when fetch rejects', async () => {
+    ;(MockAIService as any).validateUrl.mockImplementation(() => undefined)
     const { registerIpcHandlers } = await import('../src/main/ipc')
     const fetchMock = vi.fn(async () => {
       throw new Error('network down')

@@ -15,9 +15,7 @@ import {
 } from '../store'
 import { ConnectionConfig } from '../db/types'
 import { appLogger } from '../logger'
-import type { AIRequest } from '../ai/types'
-import { createLocalAIService } from '../ai/service'
-import { validateLocalBaseUrl } from '../ai/url-policy'
+import { AIService, type AIRequest, type AIProvider } from '../ai/service'
 import { isTrustedRendererUrl } from '../security'
 import type { UpdateService } from '../update/service'
 import { localStore, type ConnectionLogEntry, type PersistedQueryHistoryEntry, type DashboardLayoutRecord } from '../local-store'
@@ -29,7 +27,7 @@ class UntrustedRendererContextError extends Error {
 }
 
 export function registerIpcHandlers(manager: ConnectionManager, updateService?: UpdateService): void {
-  const aiService = createLocalAIService()
+  const aiService = new AIService()
   const debugChannels = new Set(['db:query'])
 
   // Forward unexpected connection-lost events from the manager to all renderer windows
@@ -303,52 +301,29 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     return aiService.getSettings()
   })
   handleWithLogging('ai:run-task', async (_event: IpcMainInvokeEvent, request: AIRequest) => {
-    // Re-read settings each time so model changes take effect without restart.
-    const settings = loadSettings()
-    const runtimeService = settings.ai
-      ? createLocalAIService(settings.ai.provider, settings.ai.baseUrl, settings.ai.model)
-      : aiService
-    return runtimeService.runTask(request)
+    const s = loadSettings().ai
+    const svc = s ? new AIService(s.provider, s.baseUrl, s.model) : aiService
+    return svc.runTask(request)
   })
 
   handleWithLogging(
     'ai:list-models',
-    async (
-      _event: IpcMainInvokeEvent,
-      request?: { provider?: 'ollama' | 'openai-compatible'; baseUrl?: string }
-    ) => {
-      const settings = loadSettings()
-      const provider = request?.provider ?? settings.ai?.provider ?? 'ollama'
-      const fallbackBaseUrl = provider === 'ollama' ? 'http://127.0.0.1:11434' : 'http://127.0.0.1:1234/v1'
-      const requestedBaseUrl = request?.baseUrl?.trim()
-      const baseUrl = requestedBaseUrl || settings.ai?.baseUrl || fallbackBaseUrl
-      const validationError = validateLocalBaseUrl(
-        baseUrl,
-        provider === 'ollama' ? 'KOBEANSQL_OLLAMA_URL' : 'KOBEANSQL_OPENAI_URL',
-        fallbackBaseUrl
-      )
-      if (validationError) {
-        return { success: false, models: [], error: validationError }
-      }
+    async (_event: IpcMainInvokeEvent, req?: { provider?: AIProvider; baseUrl?: string }) => {
+      const s = loadSettings().ai
+      const provider = req?.provider ?? s?.provider ?? 'ollama'
+      const baseUrl = req?.baseUrl?.trim() || s?.baseUrl || (provider === 'ollama' ? 'http://127.0.0.1:11434' : 'http://127.0.0.1:1234/v1')
+      
+      const err = AIService.validateUrl(baseUrl)
+      if (err) return { success: false, models: [], error: err }
+
       try {
-        if (provider === 'ollama') {
-          const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/tags`, {
-            signal: AbortSignal.timeout(5000)
-          })
-          if (!response.ok) return { success: false, models: [], error: `Ollama responded with ${response.status}` }
-          const data = (await response.json()) as { models?: Array<{ name: string }> }
-          const models = (data.models ?? []).map((m) => m.name).filter(Boolean)
-          return { success: true, models }
-        } else {
-          // OpenAI-compatible list endpoint — normalize base, then always append /v1/models
-          const base = baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')
-          const endpoint = `${base}/v1/models`
-          const response = await fetch(endpoint, { signal: AbortSignal.timeout(5000) })
-          if (!response.ok) return { success: false, models: [], error: `Provider responded with ${response.status}` }
-          const data = (await response.json()) as { data?: Array<{ id: string }> }
-          const models = (data.data ?? []).map((m) => m.id).filter(Boolean)
-          return { success: true, models }
-        }
+        const isOllama = provider === 'ollama'
+        const endpoint = isOllama ? `${baseUrl.replace(/\/+$/, '')}/api/tags` : `${baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')}/v1/models`
+        const res = await fetch(endpoint, { signal: AbortSignal.timeout(5000) })
+        if (!res.ok) throw new Error(`Provider returned ${res.status}`)
+        const data = await res.json()
+        const models = isOllama ? (data.models || []).map(m => m.name) : (data.data || []).map(m => m.id)
+        return { success: true, models: models.filter(Boolean) }
       } catch (err) {
         return { success: false, models: [], error: (err as Error).message }
       }

@@ -1,33 +1,11 @@
-import React from 'react'
+import React, { Component, ReactNode } from 'react'
 
-interface Props {
-  children: React.ReactNode
-  fallback: React.ReactNode | ((error: Error | null) => React.ReactNode)
-  onError?: (error: Error) => void
-}
-
-interface State {
-  hasError: boolean
-  error: Error | null
-}
-
-export class RenderGuard extends React.Component<Props, State> {
-  state: State = { hasError: false, error: null }
-
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error }
-  }
-
-  componentDidCatch(error: Error): void {
-    this.props.onError?.(error)
-  }
-
-  render(): React.ReactNode {
-    if (this.state.hasError) {
-      return typeof this.props.fallback === 'function'
-        ? this.props.fallback(this.state.error)
-        : this.props.fallback
-    }
-    return this.props.children
+export class RenderGuard extends Component<{ children: ReactNode, fallback: ReactNode | ((e: Error) => ReactNode), onError?: (e: Error) => void }, { e: Error | null }> {
+  state = { e: null as Error | null }
+  static getDerivedStateFromError(e: Error) { return { e } }
+  componentDidCatch(e: Error) { this.props.onError?.(e) }
+  render() {
+    const { e } = this.state, { fallback, children } = this.props
+    return e ? (typeof fallback === 'function' ? fallback(e) : fallback) : children
   }
 }
