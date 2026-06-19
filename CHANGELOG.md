@@ -1,3 +1,10 @@
+# [1.29.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.28.0...v1.29.0) (2026-06-19)
+
+
+### Features
+
+* **setup:** add cross-platform setup script and global kb cli ([#66](https://github.com/kobenguyent/KobeanSQL/issues/66)) ([5ce15b6](https://github.com/kobenguyent/KobeanSQL/commit/5ce15b6538daaa2d55623167406ae8764e1f7331))
+
 # [1.28.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.27.0...v1.28.0) (2026-06-16)
 
 
