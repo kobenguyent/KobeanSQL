@@ -224,6 +224,29 @@ Head to the [Releases page](https://github.com/kobenguyent/KobeanSQL/releases/la
 
 ### Development Setup
 
+**Option A: Automatic Fast Setup (Recommended)**
+
+The absolute fastest way to get up and running. 
+
+**Step 1. The One-Time Setup (`npm start`)**
+Run this command *only once* right after cloning. It installs all dependencies, rebuilds native modules, and registers the global `kb` command to your computer.
+
+```bash
+git clone https://github.com/kobenguyent/KobeanSQL.git
+cd KobeanSQL
+npm start
+```
+*(Note: You can also use `make` if you prefer).*
+
+**Step 2. The Daily Shortcut (`kb start`)**
+After the initial setup is done, you never have to run `npm start` again. You can instantly launch the app from *absolutely anywhere* on your computer by typing:
+
+```bash
+kb start
+```
+
+**Option B: Manual Setup**
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/kobenguyent/KobeanSQL.git

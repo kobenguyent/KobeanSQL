@@ -9,7 +9,11 @@
   },
   "license": "MIT",
   "homepage": "https://github.com/kobenguyent/KobeanSQL",
+  "bin": {
+    "kb": "./scripts/cli.js"
+  },
   "scripts": {
+    "start": "node scripts/setup.js",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
