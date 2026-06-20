@@ -514,43 +514,15 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
   )
 
   // -------------------------------------------------------------------------
-  // Metrics data (mocked for now; real adapters can replace the switch cases)
+  // Metrics data
   // -------------------------------------------------------------------------
-
-  const MIN_METRIC_POINTS = 1
-  const MAX_METRIC_POINTS = 200
-  const DEFAULT_METRIC_POINTS = 20
-  const METRIC_INTERVAL_MS = 60_000 // 1-minute buckets
 
   handleWithLogging(
     'metrics:get-data',
-    async (_event: IpcMainInvokeEvent, metricId: string, params?: { points?: number }) => {
-      const points = Math.max(MIN_METRIC_POINTS, Math.min(MAX_METRIC_POINTS, params?.points ?? DEFAULT_METRIC_POINTS))
-      const now = Date.now()
-
-      const data: Array<{ timestamp: number; value: number }> = []
-      for (let i = points - 1; i >= 0; i--) {
-        const timestamp = now - i * METRIC_INTERVAL_MS
-        let value: number
-        switch (metricId) {
-          case 'active_connections':
-            value = Math.round(5 + Math.random() * 15)
-            break
-          case 'queries_per_minute':
-            value = Math.round(100 + Math.random() * 400)
-            break
-          case 'query_exec_time':
-            value = Math.round(10 + Math.random() * 490)
-            break
-          case 'row_counts':
-            value = Math.round(1000 + Math.random() * 99000)
-            break
-          default:
-            value = Math.round(Math.random() * 100)
-        }
-        data.push({ timestamp, value })
-      }
-
+    async (_event: IpcMainInvokeEvent, connectionId: string, metricId: string, params?: { points?: number }) => {
+      // Return real collected metric data from localStore
+      const points = params?.points ?? 20
+      const data = localStore.getMetricTimeSeries(connectionId, metricId, points)
       return { metricId, data }
     }
   )

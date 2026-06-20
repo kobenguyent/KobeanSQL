@@ -258,6 +258,10 @@ export class ConnectionManager extends EventEmitter {
     return live
   }
 
+  getActiveConnections(): { id: string; adapter: DatabaseAdapter }[] {
+    return Array.from(this.connections.entries()).map(([id, adapter]) => ({ id, adapter }))
+  }
+
   async testConnection(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: ConnectionConfig['type'] }> {
     let adapter: DatabaseAdapter | null = null
     try {

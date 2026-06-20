@@ -148,7 +148,7 @@ declare global {
       clearSchemaCache(connectionId?: string): Promise<{ success: boolean }>
 
       // Metric data
-      getMetricData(metricId: string, params?: { points?: number }): Promise<{
+      getMetricData(connectionId: string, metricId: string, params?: { points?: number }): Promise<{
         metricId: string
         data: Array<{ timestamp: number; value: number }>
       }>

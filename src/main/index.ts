@@ -9,12 +9,15 @@ import { createUpdateService } from './update/service'
 import { localStore } from './local-store'
 import {performMigrations} from "./store";
 
+import { MetricsCollector } from './db/metrics/collector'
+
 // Configure logger
 setupLogger()
 appLogger.info('KobeanSQL starting...')
 
 const manager = new ConnectionManager()
 const updateService = createUpdateService()
+const metricsCollector = new MetricsCollector(manager)
 
 function createWindow(): BrowserWindow {
   const iconPath = path.join(app.getAppPath(), 'build/icon.png')
@@ -96,6 +99,7 @@ app.whenReady().then(async () => {
   registerIpcHandlers(manager, updateService)
   createWindow()
   updateService.initialize()
+  metricsCollector.start()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -106,6 +110,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', async () => {
   appLogger.info('All windows closed, disconnecting all connections')
+  metricsCollector.stop()
   await manager.disconnectAll()
   localStore.close()
   if (process.platform !== 'darwin') {
@@ -115,6 +120,7 @@ app.on('window-all-closed', async () => {
 
 app.on('before-quit', async () => {
   appLogger.info('App before-quit, disconnecting all connections')
+  metricsCollector.stop()
   await manager.disconnectAll()
   localStore.close()
 })
