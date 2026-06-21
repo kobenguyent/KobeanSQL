@@ -5,7 +5,7 @@ import {
   setLocale,
   registerLocale,
   getSupportedLocales,
-} from '../src/renderer/src/i18n/index'
+} from '../../../src/renderer/src/i18n/index'
 
 // Reset module state between tests by resetting locale to 'en'
 beforeEach(() => {

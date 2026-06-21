@@ -4,7 +4,7 @@ import path from 'path'
 import fs from 'fs'
 import { spawnSync } from 'child_process'
 
-const REPO_ROOT = path.resolve(__dirname, '..')
+const REPO_ROOT = path.resolve(__dirname, '../..')
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js')
 const DB_SCRIPT = path.join(REPO_ROOT, 'scripts/setup-test-db.ts')
 const ELECTRON_CLI = path.join(REPO_ROOT, 'node_modules/electron/cli.js')

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { compareVersions, isNewerVersion, normalizeVersion } from '../src/main/update/version'
+import { compareVersions, isNewerVersion, normalizeVersion } from '../../../src/main/update/version'
 
 describe('update version utils', () => {
   it('normalizes v-prefix', () => {

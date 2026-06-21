@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildProcedureCallSql, buildSelectTableSql, quoteIdentifier } from '../src/renderer/src/sql/dsl'
+import { buildProcedureCallSql, buildSelectTableSql, quoteIdentifier } from '../../../src/renderer/src/sql/dsl'
 
 describe('KobeanSQL DSL', () => {
   it('builds dialect-aware SELECT table SQL', () => {

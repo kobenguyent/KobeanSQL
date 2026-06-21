@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
   shell: { openPath: vi.fn() }
 }))
 
-vi.mock('../src/main/store', () => ({
+vi.mock('../../../src/main/store', () => ({
   loadConnections: vi.fn(() => []),
   saveConnections: vi.fn(),
   loadSavedQueries: vi.fn(() => []),
@@ -36,14 +36,14 @@ const MockAIService = vi.fn().mockImplementation(function() {
 })
 ;(MockAIService as any).validateUrl = vi.fn()
 
-vi.mock('../src/main/ai/service', () => ({
+vi.mock('../../../src/main/ai/service', () => ({
   AIService: MockAIService
 }))
 
 function getTrustedEvent(): { senderFrame: { url: string } } {
   return {
     senderFrame: {
-      url: pathToFileURL(path.resolve(__dirname, '../src/renderer/index.html')).toString()
+      url: pathToFileURL(path.resolve(__dirname, '../../../src/renderer/index.html')).toString()
     }
   }
 }
@@ -91,7 +91,7 @@ describe('IPC updates channels', () => {
   })
 
   it('wires update status and actions through update service', async () => {
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     const updateService = {
       reschedule: vi.fn(),
       getStatus: vi.fn(() => ({ checking: false })),
@@ -125,7 +125,7 @@ describe('IPC updates channels', () => {
   })
 
   it('delegates download to update service', async () => {
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     const downloadStatus = { downloadState: 'ready', downloadProgress: 100 }
     const updateService = {
       reschedule: vi.fn(),
@@ -147,7 +147,7 @@ describe('IPC updates channels', () => {
   })
 
   it('delegates install to update service', async () => {
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     const updateService = {
       reschedule: vi.fn(),
       getStatus: vi.fn(() => ({ checking: false })),
@@ -168,14 +168,14 @@ describe('IPC updates channels', () => {
   })
 
   it('returns null for download when no update service', async () => {
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     registerIpcHandlers(getManagerStub() as never)
     const handlers = getHandlers()
     expect(await handlers['updates:download'](getTrustedEvent())).toBeNull()
   })
 
   it('returns error for install when no update service', async () => {
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     registerIpcHandlers(getManagerStub() as never)
     const handlers = getHandlers()
     const result = await handlers['updates:install'](getTrustedEvent())
@@ -183,7 +183,7 @@ describe('IPC updates channels', () => {
   })
 
   it('skips destroyed windows when forwarding connection-lost', async () => {
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     const manager = getManagerStub()
     const sendLive = vi.fn()
     const sendDestroyed = vi.fn()
@@ -234,7 +234,7 @@ describe('IPC ai:list-models channel', () => {
   })
 
   it('lists Ollama models from /api/tags with timeout signal', async () => {
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ models: [{ name: 'llama3.1' }, { name: 'mistral' }] })
@@ -258,7 +258,7 @@ describe('IPC ai:list-models channel', () => {
   })
 
   it('normalizes OpenAI-compatible /v1/models endpoint', async () => {
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ data: [{ id: 'local-model' }] })
@@ -281,7 +281,7 @@ describe('IPC ai:list-models channel', () => {
 
   it('rejects non-local URLs before fetch', async () => {
     ;(MockAIService as any).validateUrl.mockReturnValue('local-only policy violation')
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
@@ -302,7 +302,7 @@ describe('IPC ai:list-models channel', () => {
 
   it('returns a failure payload when fetch rejects', async () => {
     ;(MockAIService as any).validateUrl.mockImplementation(() => undefined)
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     const fetchMock = vi.fn(async () => {
       throw new Error('network down')
     })
@@ -322,7 +322,7 @@ describe('IPC database mutation channels', () => {
   })
 
   it('supports deleteRow, insertRow, and duplicateRow operations', async () => {
-    const { registerIpcHandlers } = await import('../src/main/ipc')
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
     registerIpcHandlers(getManagerStub() as never)
     const handlers = getHandlers()
 

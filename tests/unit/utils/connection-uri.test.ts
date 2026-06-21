@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseConnectionUri, resolveConnectionConfig } from '../src/main/db/connection-uri'
-import type { ConnectionConfig } from '../src/main/db/types'
+import { parseConnectionUri, resolveConnectionConfig } from '../../../src/main/db/connection-uri'
+import type { ConnectionConfig } from '../../../src/main/db/types'
 
 describe('connection URI parsing', () => {
   it('parses postgres URI', () => {

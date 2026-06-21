@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { MigrationManager } from '../src/main/migration'
+import { MigrationManager } from '../../../src/main/migration'
 
 describe('MigrationManager', () => {
   let tempDir: string
@@ -93,7 +93,7 @@ describe('MigrationManager', () => {
     })
 
     it('should migrate saved queries from JSON to SQLite in LocalStore', async () => {
-      const { LocalStore } = await import('../src/main/local-store')
+      const { LocalStore } = await import('../../../src/main/local-store')
       const store = new LocalStore()
       
       const queriesPath = path.join(tempDir, 'saved-queries.json')

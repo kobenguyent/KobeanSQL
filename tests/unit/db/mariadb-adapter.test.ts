@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { MariaDBAdapter } from '../src/main/db/adapters/mariadb'
+import { MariaDBAdapter } from '../../../src/main/db/adapters/mariadb'
 
 const mockQuery = vi.fn()
 const mockPing = vi.fn()
@@ -26,7 +26,7 @@ vi.mock('mariadb', () => ({
   }
 }))
 
-vi.mock('../src/main/db/connection-uri', () => ({
+vi.mock('../../../src/main/db/connection-uri', () => ({
   resolveConnectionConfig: (config: unknown) => config
 }))
 

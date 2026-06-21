@@ -25,7 +25,7 @@ vi.mock('electron', () => ({
   }
 }))
 
-vi.mock('../src/main/local-store', () => ({
+vi.mock('../../../src/main/local-store', () => ({
   localStore: {
     getSavedQueries: vi.fn(() => []),
     addSavedQuery: vi.fn(),
@@ -64,13 +64,13 @@ describe('Connection Store (persistence)', () => {
   })
 
   it('loadConnections returns empty array when no file exists', async () => {
-    const { loadConnections } = await import('../src/main/store')
+    const { loadConnections } = await import('../../../src/main/store')
     const result = loadConnections()
     expect(result).toEqual([])
   })
 
   it('saveConnections persists data and loadConnections reads it back', async () => {
-    const { loadConnections, saveConnections } = await import('../src/main/store')
+    const { loadConnections, saveConnections } = await import('../../../src/main/store')
 
     const conns = [
       { id: 'c1', name: 'Local PG', type: 'postgres' as const, host: 'localhost', port: 5432 },
@@ -85,7 +85,7 @@ describe('Connection Store (persistence)', () => {
   })
 
   it('saveConnections persists passwords so saved connections can reconnect', async () => {
-    const { saveConnections } = await import('../src/main/store')
+    const { saveConnections } = await import('../../../src/main/store')
     saveConnections([
       {
         id: 'c1',
@@ -112,7 +112,7 @@ describe('Connection Store (persistence)', () => {
     mockSafe.encryptString.mockReturnValueOnce(Buffer.from('ENCRYPTED'))
     mockSafe.decryptString.mockReturnValueOnce('super-secret')
 
-    const { loadConnections, saveConnections } = await import('../src/main/store')
+    const { loadConnections, saveConnections } = await import('../../../src/main/store')
     saveConnections([{ id: 'c1', name: 'Enc', type: 'postgres', host: 'localhost', password: 'super-secret' }])
 
     const raw = JSON.parse(fs.readFileSync(storePath, 'utf-8')) as { connections: Array<Record<string, unknown>> }
@@ -126,7 +126,7 @@ describe('Connection Store (persistence)', () => {
 
   it('loadConnections returns empty array on malformed JSON', async () => {
     fs.writeFileSync(storePath, 'not valid json', 'utf-8')
-    const { loadConnections } = await import('../src/main/store')
+    const { loadConnections } = await import('../../../src/main/store')
     const result = loadConnections()
     expect(result).toEqual([])
   })
@@ -148,13 +148,13 @@ describe('Connection Store (persistence)', () => {
       'utf-8'
     )
 
-    const { loadConnections } = await import('../src/main/store')
+    const { loadConnections } = await import('../../../src/main/store')
     const loaded = loadConnections()
     expect(loaded[0].password).toBeUndefined()
   })
 
   it('exportConnectionsToPath omits passwords by default', async () => {
-    const { saveConnections, exportConnectionsToPath } = await import('../src/main/store')
+    const { saveConnections, exportConnectionsToPath } = await import('../../../src/main/store')
     saveConnections([{ id: 'c1', name: 'Secured', type: 'postgres', password: 'secret' }])
     exportConnectionsToPath(exportPath)
 
@@ -175,7 +175,7 @@ describe('Connection Store (persistence)', () => {
     mockSafe.isEncryptionAvailable.mockReturnValueOnce(true)
     mockSafe.encryptString.mockReturnValueOnce(Buffer.from('ENCRYPTED'))
 
-    const { saveConnections, exportConnectionsToPath } = await import('../src/main/store')
+    const { saveConnections, exportConnectionsToPath } = await import('../../../src/main/store')
     saveConnections([{ id: 'c1', name: 'Secured', type: 'postgres', password: 'secret' }])
     exportConnectionsToPath(exportPath, true)
 
@@ -188,7 +188,7 @@ describe('Connection Store (persistence)', () => {
   })
 
   it('importConnectionsFromPath validates, replaces by id and skips duplicates', async () => {
-    const { saveConnections, importConnectionsFromPath, loadConnections } = await import('../src/main/store')
+    const { saveConnections, importConnectionsFromPath, loadConnections } = await import('../../../src/main/store')
     saveConnections([
       { id: 'c1', name: 'PG Local', type: 'postgres', host: 'localhost' },
       { id: 'c2', name: 'MySQL Local', type: 'mysql', host: 'localhost' }
@@ -228,19 +228,19 @@ describe('Connection Store (persistence)', () => {
   })
 
   it('loadSettings returns defaults when file is missing', async () => {
-    const { loadSettings } = await import('../src/main/store')
+    const { loadSettings } = await import('../../../src/main/store')
     expect(loadSettings()).toEqual(defaultSettings)
   })
 
   it('loadSettings returns defaults on malformed JSON', async () => {
     fs.writeFileSync(settingsPath, '{bad json', 'utf-8')
-    const { loadSettings } = await import('../src/main/store')
+    const { loadSettings } = await import('../../../src/main/store')
     expect(loadSettings()).toEqual(defaultSettings)
   })
 
   it('loadSettings sanitizes type and range for queryLimit', async () => {
     fs.writeFileSync(settingsPath, JSON.stringify({ queryLimit: '50000' }), 'utf-8')
-    const { loadSettings } = await import('../src/main/store')
+    const { loadSettings } = await import('../../../src/main/store')
     expect(loadSettings()).toEqual({ ...defaultSettings, queryLimit: 10000 })
 
     fs.writeFileSync(settingsPath, JSON.stringify({ queryLimit: -5 }), 'utf-8')
@@ -248,7 +248,7 @@ describe('Connection Store (persistence)', () => {
   })
 
   it('saveSettings sanitizes queryLimit before writing', async () => {
-    const { saveSettings } = await import('../src/main/store')
+    const { saveSettings } = await import('../../../src/main/store')
     saveSettings({ ...defaultSettings, queryLimit: 'abc' as unknown as number })
     const stored = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { queryLimit: number }
     expect(stored.queryLimit).toBe(100)
@@ -274,7 +274,7 @@ describe('Connection Store (persistence)', () => {
       }),
       'utf-8'
     )
-    const { loadSettings } = await import('../src/main/store')
+    const { loadSettings } = await import('../../../src/main/store')
     expect(loadSettings()).toEqual({
       ...defaultSettings,
       updates: {
@@ -295,7 +295,7 @@ describe('Connection Store (persistence)', () => {
   })
 
   it('saveSettings sanitizes update interval bounds', async () => {
-    const { saveSettings } = await import('../src/main/store')
+    const { saveSettings } = await import('../../../src/main/store')
     saveSettings({
       ...defaultSettings,
       updates: {
@@ -322,7 +322,7 @@ describe('Connection Store (persistence)', () => {
       'utf-8'
     )
 
-    const { loadSettings } = await import('../src/main/store')
+    const { loadSettings } = await import('../../../src/main/store')
     expect(loadSettings()).toEqual({
       ...defaultSettings,
       ai: {

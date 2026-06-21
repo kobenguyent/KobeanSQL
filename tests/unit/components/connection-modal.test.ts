@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ConnectionConfig } from '../src/main/db/types'
-import { connectThenSaveConnection } from '../src/renderer/src/components/ConnectionModal'
+import type { ConnectionConfig } from '../../../src/main/db/types'
+import { connectThenSaveConnection } from '../../../src/renderer/src/components/ConnectionModal'
 
 describe('ConnectionModal connection persistence flow', () => {
   const config: ConnectionConfig = {
