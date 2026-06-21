@@ -203,4 +203,18 @@ export class PostgresAdapter implements DatabaseAdapter {
       return 'Unknown'
     }
   }
+
+  async getInstantMetrics(): Promise<Record<string, number>> {
+    const metrics: Record<string, number> = {}
+    try {
+      const activeConns = await this.query(`SELECT count(*) as count FROM pg_stat_activity`)
+      metrics['active_connections'] = Number(activeConns.rows[0]?.['count'] || 0)
+
+      const rowCounts = await this.query(`SELECT sum(reltuples) as count FROM pg_class WHERE relkind = 'r'`)
+      metrics['row_counts'] = Number(rowCounts.rows[0]?.['count'] || 0)
+    } catch (err) {
+      console.warn('Failed to fetch Postgres metrics:', err)
+    }
+    return metrics
+  }
 }

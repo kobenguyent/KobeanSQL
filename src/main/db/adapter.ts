@@ -13,4 +13,5 @@ export interface DatabaseAdapter {
   getProcedures(database?: string): Promise<ProcedureInfo[]>
   ping(): Promise<boolean>
   getServerVersion(): Promise<string>
+  getInstantMetrics?(): Promise<Record<string, number>>
 }

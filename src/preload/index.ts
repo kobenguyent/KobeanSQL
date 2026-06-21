@@ -244,8 +244,8 @@ const dbAPI = {
     ipcRenderer.invoke('schema-cache:clear', connectionId),
 
   // Metric data
-  getMetricData: (metricId: string, params?: { points?: number }): Promise<MetricDataResult> =>
-    ipcRenderer.invoke('metrics:get-data', metricId, params),
+  getMetricData: (connectionId: string, metricId: string, params?: { points?: number }): Promise<MetricDataResult> =>
+    ipcRenderer.invoke('metrics:get-data', connectionId, metricId, params),
 
   // Dashboard layouts
   getDashboardLayouts: (): Promise<DashboardLayoutRecord[]> =>

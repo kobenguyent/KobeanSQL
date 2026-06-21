@@ -185,4 +185,18 @@ export class MySQLAdapter implements DatabaseAdapter {
       return 'Unknown'
     }
   }
+
+  async getInstantMetrics(): Promise<Record<string, number>> {
+    const metrics: Record<string, number> = {}
+    try {
+      const activeConns = await this.query(`SHOW STATUS LIKE 'Threads_connected'`)
+      metrics['active_connections'] = Number(activeConns.rows[0]?.['Value'] || 0)
+
+      const rowCounts = await this.query(`SELECT SUM(TABLE_ROWS) as count FROM information_schema.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'sys', 'mysql')`)
+      metrics['row_counts'] = Number(rowCounts.rows[0]?.['count'] || 0)
+    } catch (err) {
+      console.warn('Failed to fetch MySQL metrics:', err)
+    }
+    return metrics
+  }
 }

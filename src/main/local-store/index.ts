@@ -62,6 +62,13 @@ export interface SchemaCacheEntry {
   cachedAt: number
 }
 
+export interface MetricDataRecord {
+  connectionId: string
+  metricId: string
+  timestamp: number
+  value: number
+}
+
 // ---------------------------------------------------------------------------
 // Low-level SQLite driver types
 // ---------------------------------------------------------------------------
@@ -217,6 +224,21 @@ export class LocalStore {
                 widgets_json TEXT    NOT NULL,
                 updated_at   INTEGER NOT NULL
               );
+            `)
+          }
+        },
+        {
+          version: 4,
+          up: () => {
+            this.db!.exec(`
+              CREATE TABLE IF NOT EXISTS metric_data (
+                connection_id TEXT    NOT NULL,
+                metric_id     TEXT    NOT NULL,
+                timestamp     INTEGER NOT NULL,
+                value         REAL    NOT NULL
+              );
+              CREATE INDEX IF NOT EXISTS idx_metric_data_lookup 
+                ON metric_data (connection_id, metric_id, timestamp DESC);
             `)
           }
         }
@@ -506,6 +528,57 @@ export class LocalStore {
       this.db.prepare('DELETE FROM dashboard_layouts WHERE id = ?').run(id)
     } catch (err) {
       appLogger.error('LocalStore.deleteDashboardLayout failed', { error: (err as Error).message })
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Metrics Data
+  // -------------------------------------------------------------------------
+
+  addMetricData(record: MetricDataRecord): void {
+    if (!this.db) return
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO metric_data (connection_id, metric_id, timestamp, value)
+           VALUES (?, ?, ?, ?)`
+        )
+        .run(record.connectionId, record.metricId, record.timestamp, record.value)
+      
+      // Cleanup old data for this connection/metric (keep last 200)
+      this.db
+        .prepare(
+          `DELETE FROM metric_data 
+           WHERE connection_id = ? AND metric_id = ? 
+             AND timestamp NOT IN (
+               SELECT timestamp FROM metric_data 
+               WHERE connection_id = ? AND metric_id = ? 
+               ORDER BY timestamp DESC LIMIT 200
+             )`
+        )
+        .run(record.connectionId, record.metricId, record.connectionId, record.metricId)
+    } catch (err) {
+      appLogger.error('LocalStore.addMetricData failed', { error: (err as Error).message })
+    }
+  }
+
+  getMetricTimeSeries(connectionId: string, metricId: string, limit = 20): { timestamp: number; value: number }[] {
+    if (!this.db) return []
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT timestamp, value FROM metric_data 
+           WHERE connection_id = ? AND metric_id = ? 
+           ORDER BY timestamp DESC LIMIT ?`
+        )
+        .all(connectionId, metricId, limit)
+      return rows.map((r) => ({
+        timestamp: Number(r['timestamp']),
+        value: Number(r['value'])
+      })).reverse() // Return in chronological order
+    } catch (err) {
+      appLogger.error('LocalStore.getMetricTimeSeries failed', { error: (err as Error).message })
+      return []
     }
   }
 }
