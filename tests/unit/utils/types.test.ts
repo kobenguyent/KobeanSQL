@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DB_COLORS, DB_DEFAULT_PORTS } from '../src/renderer/src/types'
+import { DB_COLORS, DB_DEFAULT_PORTS } from '../../../src/renderer/src/types'
 
 describe('DB_COLORS', () => {
   it('has a color for every supported database type', () => {

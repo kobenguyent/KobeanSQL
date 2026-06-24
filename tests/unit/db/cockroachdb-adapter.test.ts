@@ -20,18 +20,18 @@ vi.mock('pg', () => ({
   })
 }))
 
-vi.mock('../src/main/db/connection-uri', () => ({
+vi.mock('../../../src/main/db/connection-uri', () => ({
   resolveConnectionConfig: (config: unknown) => config
 }))
 
 describe('CockroachDBAdapter', () => {
-  let adapter: import('../src/main/db/adapters/cockroachdb').CockroachDBAdapter
+  let adapter: import('../../../src/main/db/adapters/cockroachdb').CockroachDBAdapter
 
   beforeEach(async () => {
     vi.clearAllMocks()
     mockConnect.mockResolvedValue({ query: mockQuery, release: mockRelease })
     mockEnd.mockResolvedValue(undefined)
-    const { CockroachDBAdapter } = await import('../src/main/db/adapters/cockroachdb')
+    const { CockroachDBAdapter } = await import('../../../src/main/db/adapters/cockroachdb')
     adapter = new CockroachDBAdapter()
   })
 

@@ -7,8 +7,8 @@ import {
   buildInlineUpdateMongoQuery,
   buildDeleteMongoQuery,
   buildMongoPkFilter
-} from '../src/renderer/src/components/ResultsTable'
-import { buildSelectTableSql } from '../src/renderer/src/sql/dsl'
+} from '../../../src/renderer/src/components/ResultsTable'
+import { buildSelectTableSql } from '../../../src/renderer/src/sql/dsl'
 
 describe('ResultsTable Logic', () => {
   describe('quoteIdentifierForDb', () => {

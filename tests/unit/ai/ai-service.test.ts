@@ -7,7 +7,7 @@ vi.mock('electron-log', () => ({
   }
 }))
 
-import { AIService } from '../src/main/ai/service'
+import { AIService } from '../../../src/main/ai/service'
 
 describe('local AI service selection', () => {
   it('defaults to Ollama provider', () => {

@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb'
 import { describe, expect, it } from 'vitest'
-import { parseMongoOperation } from '../src/main/db/adapters/mongodb'
+import { parseMongoOperation } from '../../../src/main/db/adapters/mongodb'
 
 describe('mongodb query parser', () => {
   it('parses find with filter and projection', () => {

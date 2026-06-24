@@ -104,7 +104,7 @@ describe('MongoDBAdapter', () => {
 
   it('connects using URI mode with server selection timeout', async () => {
     const { MongoClient } = await import('mongodb')
-    const { MongoDBAdapter } = await import('../src/main/db/adapters/mongodb')
+    const { MongoDBAdapter } = await import('../../../src/main/db/adapters/mongodb')
     const adapter = new MongoDBAdapter()
 
     await adapter.connect({
@@ -122,7 +122,7 @@ describe('MongoDBAdapter', () => {
 
   it('connects using manual host fields and default database fallback', async () => {
     const { MongoClient } = await import('mongodb')
-    const { MongoDBAdapter } = await import('../src/main/db/adapters/mongodb')
+    const { MongoDBAdapter } = await import('../../../src/main/db/adapters/mongodb')
     const adapter = new MongoDBAdapter()
 
     await adapter.connect({
@@ -141,7 +141,7 @@ describe('MongoDBAdapter', () => {
   })
 
   it('lists databases, collections, and inferred top-level fields', async () => {
-    const { MongoDBAdapter } = await import('../src/main/db/adapters/mongodb')
+    const { MongoDBAdapter } = await import('../../../src/main/db/adapters/mongodb')
     const adapter = new MongoDBAdapter()
     await adapter.connect({ id: 'mongo-3', name: 'Mongo', type: 'mongodb', host: 'localhost' })
 
@@ -161,7 +161,7 @@ describe('MongoDBAdapter', () => {
   })
 
   it('runs find and aggregate queries', async () => {
-    const { MongoDBAdapter } = await import('../src/main/db/adapters/mongodb')
+    const { MongoDBAdapter } = await import('../../../src/main/db/adapters/mongodb')
     const adapter = new MongoDBAdapter()
     await adapter.connect({ id: 'mongo-4', name: 'Mongo', type: 'mongodb', database: 'app' })
 
@@ -175,7 +175,7 @@ describe('MongoDBAdapter', () => {
   })
 
   it('executes write commands and returns metadata rows', async () => {
-    const { MongoDBAdapter } = await import('../src/main/db/adapters/mongodb')
+    const { MongoDBAdapter } = await import('../../../src/main/db/adapters/mongodb')
     const adapter = new MongoDBAdapter()
     await adapter.connect({ id: 'mongo-5', name: 'Mongo', type: 'mongodb', database: 'app' })
 
@@ -203,7 +203,7 @@ describe('MongoDBAdapter', () => {
   })
 
   it('disconnects the Mongo client', async () => {
-    const { MongoDBAdapter } = await import('../src/main/db/adapters/mongodb')
+    const { MongoDBAdapter } = await import('../../../src/main/db/adapters/mongodb')
     const adapter = new MongoDBAdapter()
     await adapter.connect({ id: 'mongo-6', name: 'Mongo', type: 'mongodb' })
 

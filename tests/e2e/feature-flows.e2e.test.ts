@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConnectionConfig } from '../src/renderer/src/types'
+import type { ConnectionConfig } from '../../src/renderer/src/types'
 import {
   buildInlineUpdateSql,
   buildDeleteSql,
@@ -11,8 +11,8 @@ import {
   buildMongoPkFilter,
   quoteIdentifierForDb,
   quoteValueForDb
-} from '../src/renderer/src/components/ResultsTable'
-import { formatServerVersion } from '../src/renderer/src/utils/version'
+} from '../../src/renderer/src/components/ResultsTable'
+import { formatServerVersion } from '../../src/renderer/src/utils/version'
 
 type DbApi = NonNullable<(typeof globalThis & { window?: { db?: unknown } })['window']>['db']
 
@@ -53,7 +53,7 @@ function createDbMock(overrides: Partial<Record<string, unknown>> = {}): DbApi {
 async function loadStoreWithDb(db: DbApi) {
   vi.resetModules()
   ;(globalThis as typeof globalThis & { window?: { db: DbApi } }).window = { db }
-  const { useAppStore } = await import('../src/renderer/src/store')
+  const { useAppStore } = await import('../../src/renderer/src/store')
   return useAppStore
 }
 

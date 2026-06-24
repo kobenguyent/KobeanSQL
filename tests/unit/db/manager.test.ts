@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ConnectionManager } from '../src/main/db/manager'
+import { ConnectionManager } from '../../../src/main/db/manager'
 
 // Mock electron-log so it doesn't break in test environment
 vi.mock('electron-log', () => ({
@@ -9,7 +9,7 @@ vi.mock('electron-log', () => ({
 }))
 
 // Mock the individual adapters so we don't need real DB connections
-vi.mock('../src/main/db/adapters/mysql', () => ({
+vi.mock('../../../src/main/db/adapters/mysql', () => ({
   MySQLAdapter: class {
     dialect = 'mysql'
     async connect() {}
@@ -24,7 +24,7 @@ vi.mock('../src/main/db/adapters/mysql', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/postgres', () => ({
+vi.mock('../../../src/main/db/adapters/postgres', () => ({
   PostgresAdapter: class {
     dialect = 'postgres'
     async connect() {}
@@ -39,7 +39,7 @@ vi.mock('../src/main/db/adapters/postgres', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/sqlite', () => ({
+vi.mock('../../../src/main/db/adapters/sqlite', () => ({
   SQLiteAdapter: class {
     dialect = 'sqlite'
     async connect() {}
@@ -54,7 +54,7 @@ vi.mock('../src/main/db/adapters/sqlite', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/mssql', () => ({
+vi.mock('../../../src/main/db/adapters/mssql', () => ({
   MSSQLAdapter: class {
     async connect() {}
     async disconnect() {}
@@ -68,7 +68,7 @@ vi.mock('../src/main/db/adapters/mssql', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/mongodb', () => ({
+vi.mock('../../../src/main/db/adapters/mongodb', () => ({
   MongoDBAdapter: class {
     async connect() {}
     async disconnect() {}
@@ -84,7 +84,7 @@ vi.mock('../src/main/db/adapters/mongodb', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/cockroachdb', () => ({
+vi.mock('../../../src/main/db/adapters/cockroachdb', () => ({
   CockroachDBAdapter: class {
     async connect() {}
     async disconnect() {}
@@ -100,7 +100,7 @@ vi.mock('../src/main/db/adapters/cockroachdb', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/clickhouse', () => ({
+vi.mock('../../../src/main/db/adapters/clickhouse', () => ({
   ClickHouseAdapter: class {
     async connect() {}
     async disconnect() {}
@@ -116,7 +116,7 @@ vi.mock('../src/main/db/adapters/clickhouse', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/cassandra', () => ({
+vi.mock('../../../src/main/db/adapters/cassandra', () => ({
   CassandraAdapter: class {
     async connect() {}
     async disconnect() {}
@@ -132,7 +132,7 @@ vi.mock('../src/main/db/adapters/cassandra', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/redis', () => ({
+vi.mock('../../../src/main/db/adapters/redis', () => ({
   RedisAdapter: class {
     async connect() {}
     async disconnect() {}
@@ -148,7 +148,7 @@ vi.mock('../src/main/db/adapters/redis', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/elasticsearch', () => ({
+vi.mock('../../../src/main/db/adapters/elasticsearch', () => ({
   ElasticsearchAdapter: class {
     async connect() {}
     async disconnect() {}
@@ -164,7 +164,7 @@ vi.mock('../src/main/db/adapters/elasticsearch', () => ({
   }
 }))
 
-vi.mock('../src/main/db/adapters/oracle', () => ({
+vi.mock('../../../src/main/db/adapters/oracle', () => ({
   OracleAdapter: class {
     async connect() {}
     async disconnect() {}
@@ -365,7 +365,7 @@ describe('ConnectionManager', () => {
   it('isConnected cleans up stale connection and emits connection-lost when adapter reports disconnected', async () => {
     // Use a custom module mock with controllable isConnected state
     let adapterConnected = true
-    const { MySQLAdapter } = await import('../src/main/db/adapters/mysql')
+    const { MySQLAdapter } = await import('../../../src/main/db/adapters/mysql')
     // Override the prototype temporarily so the newly created adapter uses our state
     const originalIsConnected = MySQLAdapter.prototype.isConnected
     try {
