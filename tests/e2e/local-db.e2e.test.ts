@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { ConnectionManager } from '../src/main/db/manager'
-import type { ConnectionConfig } from '../src/main/db/types'
+import { ConnectionManager } from '../../src/main/db/manager'
+import type { ConnectionConfig } from '../../src/main/db/types'
 
 vi.mock('electron-log', () => ({
   default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },

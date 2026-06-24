@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import path from 'path'
 import { pathToFileURL } from 'url'
-import { isSafeExternalUrl, isTrustedRendererUrl } from '../src/main/security'
+import { isSafeExternalUrl, isTrustedRendererUrl } from '../../../src/main/security'
 
 const originalRendererUrl = process.env.ELECTRON_RENDERER_URL
 
@@ -33,7 +33,7 @@ describe('main security policy', () => {
   it('trusts packaged renderer entry file in production', () => {
     delete process.env.ELECTRON_RENDERER_URL
     const expectedRendererEntry = pathToFileURL(
-      path.resolve(__dirname, '../src/renderer/index.html')
+      path.resolve(__dirname, '../../../src/renderer/index.html')
     ).toString()
     const expectedRendererEntryWithSearchAndHash = `${expectedRendererEntry}?ts=1#/home`
 

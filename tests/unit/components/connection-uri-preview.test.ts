@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseConnectionUriPreview } from '../src/renderer/src/utils/connection-uri'
+import { parseConnectionUriPreview } from '../../../src/renderer/src/utils/connection-uri'
 
 describe('connection URI preview parsing', () => {
   it('returns parsed preview for postgres uri', () => {

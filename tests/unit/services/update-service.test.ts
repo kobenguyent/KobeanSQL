@@ -54,12 +54,12 @@ vi.mock('@electron-toolkit/utils', () => ({
   is: { dev: false }
 }))
 
-vi.mock('../src/main/store', () => ({
+vi.mock('../../../src/main/store', () => ({
   loadSettings: loadSettingsMock,
   saveSettings: saveSettingsMock
 }))
 
-vi.mock('../src/main/logger', () => ({
+vi.mock('../../../src/main/logger', () => ({
   appLogger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -117,7 +117,7 @@ describe('update service downloads', () => {
       }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const { createUpdateService } = await import('../src/main/update/service')
+    const { createUpdateService } = await import('../../../src/main/update/service')
     const service = createUpdateService()
     const status = await service.downloadUpdate()
 
@@ -143,7 +143,7 @@ describe('update service downloads', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const { createUpdateService } = await import('../src/main/update/service')
+    const { createUpdateService } = await import('../../../src/main/update/service')
     const service = createUpdateService()
     const status = await service.downloadUpdate()
 
@@ -192,7 +192,7 @@ describe('update service downloads', () => {
     vi.stubGlobal('fetch', fetchMock)
     Object.defineProperty(process, 'platform', { value: 'linux' })
 
-    const { createUpdateService } = await import('../src/main/update/service')
+    const { createUpdateService } = await import('../../../src/main/update/service')
     const service = createUpdateService()
     const status = await service.downloadUpdate()
 
@@ -231,7 +231,7 @@ describe('update service downloads', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const { createUpdateService } = await import('../src/main/update/service')
+    const { createUpdateService } = await import('../../../src/main/update/service')
     const service = createUpdateService()
     await service.checkForUpdates(true)
 
