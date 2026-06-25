@@ -16,7 +16,9 @@ permissions:
 
 jobs:
   deploy:
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # Cloudflare Pages is an optional demo deployment target. Keep it opt-in so
+    # docs changes do not fail when the repo lacks a configured Pages project.
+    if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CLOUDFLARE_PAGES_PROJECT_NAME != ''
     runs-on: ubuntu-latest
     name: Deploy to Cloudflare Pages
     steps:
@@ -49,7 +51,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           wranglerVersion: "4"
-          command: pages deploy docs --project-name=kobeansql-demo --branch=${{ steps.branch.outputs.name }}
+          command: pages deploy docs --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }} --branch=${{ steps.branch.outputs.name }}
 
       - name: Print Wrangler stderr
         if: failure() && steps.deploy.outcome == 'failure'
