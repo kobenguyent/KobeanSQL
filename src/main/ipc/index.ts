@@ -2,6 +2,16 @@ import { BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, shell } from 'elect
 import path from 'path'
 import { ConnectionManager } from '../db/manager'
 import {
+  buildDeleteSql,
+  buildDuplicateSql,
+  buildInsertSql,
+  isSqlMutationDatabaseType,
+  type SqlDeleteRowMutationPayload,
+  type SqlDuplicateRowMutationPayload,
+  type SqlInsertRowMutationPayload,
+  type SqlMutationTarget
+} from '../db/mutations/sql-row-mutations'
+import {
   exportConnectionsToPath,
   importConnectionsFromPath,
   loadConnections,
@@ -24,6 +34,37 @@ class UntrustedRendererContextError extends Error {
   constructor() {
     super('Untrusted renderer context')
   }
+}
+
+interface MutationExecutionResult {
+  success: boolean
+  sql: string
+  error?: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isInsertRowMutationPayload(value: unknown): value is SqlInsertRowMutationPayload {
+  return (
+    isRecord(value) &&
+    typeof value.connectionId === 'string' &&
+    typeof value.tableName === 'string' &&
+    typeof value.databaseType === 'string' &&
+    isRecord(value.rowData)
+  )
+}
+
+function isDeleteRowMutationPayload(value: unknown): value is SqlDeleteRowMutationPayload {
+  return (
+    isInsertRowMutationPayload(value) &&
+    Array.isArray(value.pkColumns)
+  )
+}
+
+function isDuplicateRowMutationPayload(value: unknown): value is SqlDuplicateRowMutationPayload {
+  return isDeleteRowMutationPayload(value)
 }
 
 export function registerIpcHandlers(manager: ConnectionManager, updateService?: UpdateService): void {
@@ -78,6 +119,62 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
         throw error
       }
     })
+  }
+
+  const getSqlMutationTarget = (
+    channel: string,
+    connectionId: string,
+    hintedType: ConnectionConfig['type'],
+    payloadTarget: Omit<SqlMutationTarget, 'databaseType'>
+  ): SqlMutationTarget | MutationExecutionResult => {
+    const activeType = manager.getConnectionDialect(connectionId)
+
+    if (activeType !== hintedType) {
+      appLogger.warn('Row mutation payload database type mismatch; using active connection dialect', {
+        channel,
+        connectionId,
+        hintedType,
+        activeType
+      })
+    }
+
+    if (!isSqlMutationDatabaseType(activeType)) {
+      return {
+        success: false,
+        sql: '',
+        error: `Row mutations are not supported for ${activeType}.`
+      }
+    }
+
+    return {
+      ...payloadTarget,
+      databaseType: activeType
+    }
+  }
+
+  const executeSqlMutation = async (
+    channel: string,
+    connectionId: string,
+    hintedType: ConnectionConfig['type'],
+    payloadTarget: Omit<SqlMutationTarget, 'databaseType'>,
+    buildSql: (target: SqlMutationTarget) => string
+  ): Promise<MutationExecutionResult> => {
+    const resolvedTarget = getSqlMutationTarget(channel, connectionId, hintedType, payloadTarget)
+    if ('success' in resolvedTarget) {
+      return resolvedTarget
+    }
+
+    const sql = buildSql(resolvedTarget)
+    const result = await manager.query(connectionId, sql)
+    return { success: !result.error, sql, error: result.error }
+  }
+
+  const handleLegacyRowMutationFallback = (channel: string, tableName: string): boolean => {
+    appLogger.warn('Legacy row mutation IPC signature invoked; returning compatibility success until payload callers land', {
+      channel,
+      tableName
+    })
+    return true
   }
 
   // List saved connections
@@ -142,32 +239,59 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     }
   )
 
-  // Mock delete row
-  handleWithLogging(
-    'db:delete-row',
-    async (_event: IpcMainInvokeEvent, _tableName: string, _primaryKeyObject: Record<string, unknown>) => {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      return true
+  handleWithLogging('db:delete-row', async (_event: IpcMainInvokeEvent, payloadOrTableName: unknown) => {
+    if (!isDeleteRowMutationPayload(payloadOrTableName)) {
+      return handleLegacyRowMutationFallback('db:delete-row', String(payloadOrTableName))
     }
-  )
 
-  // Mock insert row
-  handleWithLogging(
-    'db:insert-row',
-    async (_event: IpcMainInvokeEvent, _tableName: string, _rowData: Record<string, unknown>) => {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      return true
-    }
-  )
+    return executeSqlMutation(
+      'db:delete-row',
+      payloadOrTableName.connectionId,
+      payloadOrTableName.databaseType,
+      {
+        tableName: payloadOrTableName.tableName,
+        database: payloadOrTableName.database,
+        schema: payloadOrTableName.schema
+      },
+      (target) => buildDeleteSql(target, payloadOrTableName.pkColumns, payloadOrTableName.rowData)
+    )
+  })
 
-  // Mock duplicate row
-  handleWithLogging(
-    'db:duplicate-row',
-    async (_event: IpcMainInvokeEvent, _tableName: string, _primaryKeyObject: Record<string, unknown>) => {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      return true
+  handleWithLogging('db:insert-row', async (_event: IpcMainInvokeEvent, payloadOrTableName: unknown) => {
+    if (!isInsertRowMutationPayload(payloadOrTableName)) {
+      return handleLegacyRowMutationFallback('db:insert-row', String(payloadOrTableName))
     }
-  )
+
+    return executeSqlMutation(
+      'db:insert-row',
+      payloadOrTableName.connectionId,
+      payloadOrTableName.databaseType,
+      {
+        tableName: payloadOrTableName.tableName,
+        database: payloadOrTableName.database,
+        schema: payloadOrTableName.schema
+      },
+      (target) => buildInsertSql(target, payloadOrTableName.rowData)
+    )
+  })
+
+  handleWithLogging('db:duplicate-row', async (_event: IpcMainInvokeEvent, payloadOrTableName: unknown) => {
+    if (!isDuplicateRowMutationPayload(payloadOrTableName)) {
+      return handleLegacyRowMutationFallback('db:duplicate-row', String(payloadOrTableName))
+    }
+
+    return executeSqlMutation(
+      'db:duplicate-row',
+      payloadOrTableName.connectionId,
+      payloadOrTableName.databaseType,
+      {
+        tableName: payloadOrTableName.tableName,
+        database: payloadOrTableName.database,
+        schema: payloadOrTableName.schema
+      },
+      (target) => buildDuplicateSql(target, payloadOrTableName.rowData, payloadOrTableName.pkColumns)
+    )
+  })
 
   // Get databases list
   handleWithLogging('db:get-databases', async (_event: IpcMainInvokeEvent, connectionId: string) => {

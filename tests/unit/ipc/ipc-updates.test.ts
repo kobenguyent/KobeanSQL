@@ -54,7 +54,7 @@ function getHandlers() {
   )
 }
 
-function getManagerStub() {
+function getManagerStub(overrides: Record<string, unknown> = {}) {
   return {
     on: vi.fn(),
     disconnectAll: vi.fn(),
@@ -63,13 +63,15 @@ function getManagerStub() {
     connect: vi.fn(),
     isConnected: vi.fn(),
     query: vi.fn(),
+    getConnectionDialect: vi.fn(() => 'postgres'),
     getCapabilitiesForType: vi.fn(),
     getDatabases: vi.fn(),
     getTables: vi.fn(),
     getColumns: vi.fn(),
     getForeignKeys: vi.fn(),
     getProcedures: vi.fn(),
-    getServerVersion: vi.fn()
+    getServerVersion: vi.fn(),
+    ...overrides
   }
 }
 
@@ -322,22 +324,88 @@ describe('IPC database mutation channels', () => {
     handleMock.mockReset()
   })
 
-  it('supports deleteRow, insertRow, and duplicateRow operations', async () => {
+  it('executes insert, delete, and duplicate through manager.query for payload intents', async () => {
     const { registerIpcHandlers } = await import('../../../src/main/ipc')
-    registerIpcHandlers(getManagerStub() as never)
+    const queryMock = vi
+      .fn()
+      .mockResolvedValue({ columns: [], rows: [], rowCount: 1, duration: 1 })
+    const manager = getManagerStub({ query: queryMock, getConnectionDialect: vi.fn(() => 'postgres') })
+    registerIpcHandlers(manager as never)
     const handlers = getHandlers()
 
     expect(handlers['db:delete-row']).toBeTypeOf('function')
     expect(handlers['db:insert-row']).toBeTypeOf('function')
     expect(handlers['db:duplicate-row']).toBeTypeOf('function')
 
-    const deleteRes = await handlers['db:delete-row'](getTrustedEvent(), 'my_table', { id: 1 })
-    const insertRes = await handlers['db:insert-row'](getTrustedEvent(), 'my_table', { id: 1, name: 'test' })
-    const duplicateRes = await handlers['db:duplicate-row'](getTrustedEvent(), 'my_table', { id: 1 })
+    const insertRes = await handlers['db:insert-row'](getTrustedEvent(), {
+      connectionId: 'pg-1',
+      databaseType: 'postgres',
+      tableName: 'users',
+      database: 'app',
+      schema: 'public',
+      rowData: { id: 1, name: 'Ada' }
+    })
+    const deleteRes = await handlers['db:delete-row'](getTrustedEvent(), {
+      connectionId: 'pg-1',
+      databaseType: 'postgres',
+      tableName: 'users',
+      database: 'app',
+      schema: 'public',
+      pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+      rowData: { id: 1, name: 'Ada' }
+    })
+    const duplicateRes = await handlers['db:duplicate-row'](getTrustedEvent(), {
+      connectionId: 'pg-1',
+      databaseType: 'postgres',
+      tableName: 'users',
+      database: 'app',
+      schema: 'public',
+      pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+      rowData: { id: 1, name: 'Ada' }
+    })
 
-    expect(deleteRes).toBe(true)
-    expect(insertRes).toBe(true)
-    expect(duplicateRes).toBe(true)
+    expect(queryMock).toHaveBeenNthCalledWith(
+      1,
+      'pg-1',
+      `INSERT INTO "public"."users" ("id", "name") VALUES (1, 'Ada');`
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      2,
+      'pg-1',
+      `DELETE FROM "public"."users" WHERE "id" = 1;`
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      3,
+      'pg-1',
+      `INSERT INTO "public"."users" ("name") VALUES ('Ada');`
+    )
+    expect(insertRes).toEqual({
+      success: true,
+      sql: `INSERT INTO "public"."users" ("id", "name") VALUES (1, 'Ada');`,
+      error: undefined
+    })
+    expect(deleteRes).toEqual({
+      success: true,
+      sql: `DELETE FROM "public"."users" WHERE "id" = 1;`,
+      error: undefined
+    })
+    expect(duplicateRes).toEqual({
+      success: true,
+      sql: `INSERT INTO "public"."users" ("name") VALUES ('Ada');`,
+      error: undefined
+    })
+  })
+
+  it('keeps the legacy mutation signature on a compatibility fallback for current callers', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(handlers['db:delete-row'](getTrustedEvent(), 'my_table', { id: 1 })).resolves.toBe(true)
+    await expect(handlers['db:insert-row'](getTrustedEvent(), 'my_table', { id: 1, name: 'test' })).resolves.toBe(true)
+    await expect(handlers['db:duplicate-row'](getTrustedEvent(), 'my_table', { id: 1 })).resolves.toBe(true)
+    expect(manager.query).not.toHaveBeenCalled()
   })
 })
 

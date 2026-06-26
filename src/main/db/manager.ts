@@ -267,6 +267,12 @@ export class ConnectionManager extends EventEmitter {
     return resolveCapabilitiesForType(type)
   }
 
+  getConnectionDialect(connectionId: string): ConnectionConfig['type'] {
+    const adapter = this.connections.get(connectionId)
+    if (!adapter) throw new Error(`Not connected: ${connectionId}`)
+    return adapter.dialect
+  }
+
   async testConnection(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: ConnectionConfig['type'] }> {
     let adapter: DatabaseAdapter | null = null
     try {

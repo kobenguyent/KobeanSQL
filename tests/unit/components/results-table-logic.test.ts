@@ -8,6 +8,11 @@ import {
   buildDeleteMongoQuery,
   buildMongoPkFilter
 } from '../../../src/renderer/src/components/ResultsTable'
+import {
+  buildInsertSql as buildMainInsertSql,
+  buildDeleteSql as buildMainDeleteSql,
+  buildDuplicateSql as buildMainDuplicateSql
+} from '../../../src/main/db/mutations/sql-row-mutations'
 import { buildSelectTableSql } from '../../../src/renderer/src/sql/dsl'
 
 describe('ResultsTable Logic', () => {
@@ -62,6 +67,34 @@ describe('ResultsTable Logic', () => {
     it('returns null if no PK columns provided', () => {
       expect(buildInlineUpdateSql(row, 'name', 'new_name', [], 'users')).toBeNull()
       expect(buildDeleteSql(row, [], 'users')).toBeNull()
+    })
+  })
+
+  describe('Main-process SQL mutation builders', () => {
+    const target = {
+      tableName: 'users',
+      database: 'app',
+      schema: 'public',
+      databaseType: 'postgres'
+    } as const
+    const pk = [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }] as const
+    const row = { id: 1, name: "Ada's" }
+
+    it('builds INSERT SQL with the same qualifier and quoting rules as the renderer', () => {
+      expect(buildMainInsertSql(target, row)).toBe(
+        `INSERT INTO "public"."users" ("id", "name") VALUES (1, 'Ada''s');`
+      )
+    })
+
+    it('builds DELETE SQL matching the renderer helper output', () => {
+      const rendererSql = buildDeleteSql(row, [...pk], target.tableName, target.database, target.schema, target.databaseType)
+      expect(buildMainDeleteSql(target, [...pk], row)).toBe(rendererSql?.replace('\n', ' '))
+    })
+
+    it('builds duplicate INSERT SQL without primary-key columns', () => {
+      expect(buildMainDuplicateSql(target, row, [...pk])).toBe(
+        `INSERT INTO "public"."users" ("name") VALUES ('Ada''s');`
+      )
     })
   })
 
