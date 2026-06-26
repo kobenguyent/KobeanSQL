@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConnectionConfig } from '../../src/renderer/src/types'
+import type { ConnectionConfig, DatabaseManagementCapabilities } from '../../src/renderer/src/types'
 import {
   buildInlineUpdateSql,
   buildDeleteSql,
@@ -26,6 +26,16 @@ function createDbMock(overrides: Partial<Record<string, unknown>> = {}): DbApi {
     disconnect: vi.fn().mockResolvedValue({ success: true }),
     isConnected: vi.fn().mockResolvedValue(false),
     query: vi.fn().mockResolvedValue({ columns: [], rows: [], rowCount: 0, duration: 1 }),
+    getCapabilitiesForType: vi.fn().mockResolvedValue({
+      canInsertRow: false,
+      canDeleteRow: false,
+      canDuplicateRow: false,
+      canInlineUpdateRow: false,
+      canCopyTable: false,
+      canManageSchema: false,
+      supportsForeignKeys: false,
+      supportsProcedures: false
+    } satisfies DatabaseManagementCapabilities),
     getDatabases: vi.fn().mockResolvedValue([]),
     getTables: vi.fn().mockResolvedValue([]),
     getColumns: vi.fn().mockResolvedValue([]),
@@ -113,6 +123,28 @@ describe('E2E feature flows', () => {
     expect(sqlTabs).toContain('SELECT TOP 25 * FROM [reporting].[Orders];')
     expect(sqlTabs).toContain('SELECT * FROM "appdb"."users" LIMIT 25;')
     expect(sqlTabs).toContain('db.users.find({}).limit(25)')
+  })
+
+  it('loads and stores per-connection management capabilities', async () => {
+    const caps: DatabaseManagementCapabilities = {
+      canInsertRow: true,
+      canDeleteRow: true,
+      canDuplicateRow: true,
+      canInlineUpdateRow: true,
+      canCopyTable: true,
+      canManageSchema: true,
+      supportsForeignKeys: true,
+      supportsProcedures: true
+    }
+    const db = createDbMock({
+      getCapabilitiesForType: vi.fn().mockResolvedValue(caps)
+    })
+    const useAppStore = await loadStoreWithDb(db)
+
+    await useAppStore.getState().loadConnectionCapabilities('pg-1', 'postgres')
+
+    expect(db.getCapabilitiesForType).toHaveBeenCalledWith('postgres')
+    expect(useAppStore.getState().connectionCapabilities['pg-1']).toEqual(caps)
   })
 
   it('stores SQL error in tab result when query returns an error (e.g. LIKE %pattern%)', async () => {

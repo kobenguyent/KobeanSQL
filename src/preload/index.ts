@@ -1,10 +1,28 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
-import type { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo } from '../main/db/types'
+import type {
+  ConnectionConfig,
+  QueryResult,
+  TableInfo,
+  ColumnInfo,
+  ProcedureInfo,
+  ForeignKeyInfo,
+  DatabaseType,
+  DatabaseManagementCapabilities
+} from '../main/db/types'
 import type { DatabaseSchema } from '../renderer/src/types/schema'
 
-export type { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo }
+export type {
+  ConnectionConfig,
+  QueryResult,
+  TableInfo,
+  ColumnInfo,
+  ProcedureInfo,
+  ForeignKeyInfo,
+  DatabaseType,
+  DatabaseManagementCapabilities
+}
 
 export interface SavedQueryRecord {
   id: string
@@ -149,6 +167,8 @@ const dbAPI = {
   isConnected: (id: string): Promise<boolean> => ipcRenderer.invoke('db:is-connected', id),
   query: (connectionId: string, sql: string, params?: unknown[]): Promise<QueryResult> =>
     ipcRenderer.invoke('db:query', connectionId, sql, params),
+  getCapabilitiesForType: (type: DatabaseType): Promise<DatabaseManagementCapabilities> =>
+    ipcRenderer.invoke('db:get-capabilities-for-type', type),
   insertRow: (tableName: string, rowData: Record<string, unknown>): Promise<boolean> =>
     ipcRenderer.invoke('db:insert-row', tableName, rowData),
   duplicateRow: (tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean> =>

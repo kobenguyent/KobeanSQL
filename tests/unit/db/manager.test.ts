@@ -191,6 +191,26 @@ describe('ConnectionManager', () => {
     expect(manager.isConnected('any-id')).toBe(false)
   })
 
+  describe('getCapabilitiesForType', () => {
+    it('returns SQL write capabilities for postgres', () => {
+      const caps = manager.getCapabilitiesForType('postgres')
+
+      expect(caps.canInsertRow).toBe(true)
+      expect(caps.canDeleteRow).toBe(true)
+      expect(caps.canDuplicateRow).toBe(true)
+      expect(caps.canCopyTable).toBe(true)
+    })
+
+    it('returns constrained capabilities for redis', () => {
+      const caps = manager.getCapabilitiesForType('redis')
+
+      expect(caps.canInsertRow).toBe(false)
+      expect(caps.canDeleteRow).toBe(false)
+      expect(caps.canDuplicateRow).toBe(false)
+      expect(caps.canCopyTable).toBe(false)
+    })
+  })
+
   it('connects successfully and marks connection as active', async () => {
     const config = {
       id: 'conn-1',

@@ -135,6 +135,13 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     }
   )
 
+  handleWithLogging(
+    'db:get-capabilities-for-type',
+    async (_event: IpcMainInvokeEvent, type: ConnectionConfig['type']) => {
+      return manager.getCapabilitiesForType(type)
+    }
+  )
+
   // Mock delete row
   handleWithLogging(
     'db:delete-row',

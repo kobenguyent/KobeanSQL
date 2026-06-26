@@ -73,3 +73,5 @@ export interface ForeignKeyInfo {
   /** The referenced column */
   referencedColumn: string
 }
+
+export type { DatabaseManagementCapabilities } from './capabilities'

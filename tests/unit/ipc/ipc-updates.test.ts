@@ -63,6 +63,7 @@ function getManagerStub() {
     connect: vi.fn(),
     isConnected: vi.fn(),
     query: vi.fn(),
+    getCapabilitiesForType: vi.fn(),
     getDatabases: vi.fn(),
     getTables: vi.fn(),
     getColumns: vi.fn(),
@@ -337,5 +338,44 @@ describe('IPC database mutation channels', () => {
     expect(deleteRes).toBe(true)
     expect(insertRes).toBe(true)
     expect(duplicateRes).toBe(true)
+  })
+})
+
+describe('IPC capability channels', () => {
+  beforeEach(() => {
+    handleMock.mockReset()
+  })
+
+  it('supports capability lookup by database type', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    manager.getCapabilitiesForType.mockReturnValue({
+      canInsertRow: true,
+      canDeleteRow: true,
+      canDuplicateRow: true,
+      canInlineUpdateRow: true,
+      canCopyTable: true,
+      canManageSchema: true,
+      supportsForeignKeys: true,
+      supportsProcedures: true
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    expect(handlers['db:get-capabilities-for-type']).toBeTypeOf('function')
+
+    const result = await handlers['db:get-capabilities-for-type'](getTrustedEvent(), 'postgres')
+
+    expect(manager.getCapabilitiesForType).toHaveBeenCalledWith('postgres')
+    expect(result).toEqual({
+      canInsertRow: true,
+      canDeleteRow: true,
+      canDuplicateRow: true,
+      canInlineUpdateRow: true,
+      canCopyTable: true,
+      canManageSchema: true,
+      supportsForeignKeys: true,
+      supportsProcedures: true
+    })
   })
 })
