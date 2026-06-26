@@ -20,6 +20,12 @@ import { setLocale } from '../i18n'
 
 const THEME_STORAGE_KEY = 'kobeansql-theme'
 const UPDATE_DOWNLOAD_POLL_MS = 250
+const connectionCapabilityRequestTokens = new Map<string, number>()
+let nextConnectionCapabilityRequestToken = 1
+
+function invalidateConnectionCapabilityRequest(connectionId: string): void {
+  connectionCapabilityRequestTokens.delete(connectionId)
+}
 
 function loadPersistedTheme(): 'dark' | 'light' | 'system' | 'matrix' | 'cyberpunk' {
   try {
@@ -321,6 +327,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteConnection: async (id) => {
     await window.db.deleteConnection(id)
+    invalidateConnectionCapabilityRequest(id)
     const { connectedIds, schema, connectionCapabilities } = get()
     const nextIds = new Set(connectedIds)
     nextIds.delete(id)
@@ -370,6 +377,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   disconnect: async (id) => {
     await window.db.disconnect(id)
+    invalidateConnectionCapabilityRequest(id)
     const { connectedIds, schema, connectionVersions, connectionCapabilities, connections } = get()
     const nextIds = new Set(connectedIds)
     nextIds.delete(id)
@@ -383,6 +391,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   handleConnectionLost: (id) => {
+    invalidateConnectionCapabilityRequest(id)
     const { connectedIds, schema, connectionVersions, connectionCapabilities, connections } = get()
     const nextIds = new Set(connectedIds)
     nextIds.delete(id)
@@ -396,8 +405,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   loadConnectionCapabilities: async (connectionId, type) => {
+    const requestToken = nextConnectionCapabilityRequestToken++
+    connectionCapabilityRequestTokens.set(connectionId, requestToken)
+
     try {
       const capabilities = await window.db.getCapabilitiesForType(type)
+      if (connectionCapabilityRequestTokens.get(connectionId) !== requestToken) return
+      if (!get().connectedIds.has(connectionId)) {
+        invalidateConnectionCapabilityRequest(connectionId)
+        return
+      }
+
+      invalidateConnectionCapabilityRequest(connectionId)
       set((s) => ({
         connectionCapabilities: {
           ...s.connectionCapabilities,
@@ -405,6 +424,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }))
     } catch {
+      if (connectionCapabilityRequestTokens.get(connectionId) !== requestToken) return
+
+      invalidateConnectionCapabilityRequest(connectionId)
       set((s) => {
         if (!(connectionId in s.connectionCapabilities)) return {}
         const nextCapabilities = { ...s.connectionCapabilities }

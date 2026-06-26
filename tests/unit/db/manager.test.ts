@@ -192,22 +192,34 @@ describe('ConnectionManager', () => {
   })
 
   describe('getCapabilitiesForType', () => {
-    it('returns SQL write capabilities for postgres', () => {
-      const caps = manager.getCapabilitiesForType('postgres')
+    it('returns full management capabilities for all supported SQL write engines', () => {
+      const writableEngines = ['postgres', 'mysql', 'mariadb', 'sqlite', 'mssql', 'cockroachdb'] as const
 
-      expect(caps.canInsertRow).toBe(true)
-      expect(caps.canDeleteRow).toBe(true)
-      expect(caps.canDuplicateRow).toBe(true)
-      expect(caps.canCopyTable).toBe(true)
+      for (const engine of writableEngines) {
+        expect(manager.getCapabilitiesForType(engine)).toEqual({
+          canInsertRow: true,
+          canDeleteRow: true,
+          canDuplicateRow: true,
+          canInlineUpdateRow: true,
+          canCopyTable: true,
+          canManageSchema: true,
+          supportsForeignKeys: true,
+          supportsProcedures: true
+        })
+      }
     })
 
     it('returns constrained capabilities for redis', () => {
-      const caps = manager.getCapabilitiesForType('redis')
-
-      expect(caps.canInsertRow).toBe(false)
-      expect(caps.canDeleteRow).toBe(false)
-      expect(caps.canDuplicateRow).toBe(false)
-      expect(caps.canCopyTable).toBe(false)
+      expect(manager.getCapabilitiesForType('redis')).toEqual({
+        canInsertRow: false,
+        canDeleteRow: false,
+        canDuplicateRow: false,
+        canInlineUpdateRow: false,
+        canCopyTable: false,
+        canManageSchema: false,
+        supportsForeignKeys: false,
+        supportsProcedures: false
+      })
     })
   })
 

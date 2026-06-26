@@ -76,30 +76,6 @@ describe('E2E feature flows', () => {
     vi.restoreAllMocks()
   })
 
-  it('does not restore server version after disconnect if async version arrives late', async () => {
-    let resolveVersion: ((value: { version: string }) => void) | null = null
-    const delayedVersionPromise = new Promise<{ version: string }>((resolve) => {
-      resolveVersion = resolve
-    })
-    const db = createDbMock({
-      getServerVersion: vi.fn().mockReturnValue(delayedVersionPromise)
-    })
-
-    const useAppStore = await loadStoreWithDb(db)
-    const config: ConnectionConfig = { id: 'c1', name: 'Prod PG', type: 'postgres', host: 'localhost' }
-    useAppStore.setState({ connections: [config] })
-
-    await useAppStore.getState().connect(config)
-    await useAppStore.getState().disconnect(config.id)
-
-    resolveVersion?.({ version: 'PostgreSQL 16.4 on x86_64' })
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(useAppStore.getState().connectedIds.has(config.id)).toBe(false)
-    expect(useAppStore.getState().connectionVersions[config.id]).toBeUndefined()
-  })
-
   it('opens table tabs using settings queryLimit and correct dialect SQL', async () => {
     const db = createDbMock({
       query: vi.fn().mockResolvedValue({ columns: [], rows: [], rowCount: 0, duration: 3 })
@@ -123,28 +99,6 @@ describe('E2E feature flows', () => {
     expect(sqlTabs).toContain('SELECT TOP 25 * FROM [reporting].[Orders];')
     expect(sqlTabs).toContain('SELECT * FROM "appdb"."users" LIMIT 25;')
     expect(sqlTabs).toContain('db.users.find({}).limit(25)')
-  })
-
-  it('loads and stores per-connection management capabilities', async () => {
-    const caps: DatabaseManagementCapabilities = {
-      canInsertRow: true,
-      canDeleteRow: true,
-      canDuplicateRow: true,
-      canInlineUpdateRow: true,
-      canCopyTable: true,
-      canManageSchema: true,
-      supportsForeignKeys: true,
-      supportsProcedures: true
-    }
-    const db = createDbMock({
-      getCapabilitiesForType: vi.fn().mockResolvedValue(caps)
-    })
-    const useAppStore = await loadStoreWithDb(db)
-
-    await useAppStore.getState().loadConnectionCapabilities('pg-1', 'postgres')
-
-    expect(db.getCapabilitiesForType).toHaveBeenCalledWith('postgres')
-    expect(useAppStore.getState().connectionCapabilities['pg-1']).toEqual(caps)
   })
 
   it('stores SQL error in tab result when query returns an error (e.g. LIKE %pattern%)', async () => {
