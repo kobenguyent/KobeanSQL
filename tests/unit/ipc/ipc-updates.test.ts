@@ -396,6 +396,95 @@ describe('IPC database mutation channels', () => {
     })
   })
 
+  it('returns a structured failure when SQL execution rejects', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const queryMock = vi.fn().mockRejectedValue(new Error('constraint violation'))
+    const manager = getManagerStub({ query: queryMock, getConnectionDialect: vi.fn(() => 'postgres') })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: `INSERT INTO "public"."users" ("id", "name") VALUES (1, 'Ada');`,
+      error: 'constraint violation'
+    })
+  })
+
+  it('returns a structured failure when dialect resolution throws', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub({
+      getConnectionDialect: vi.fn(() => {
+        throw new Error('Not connected: pg-1')
+      })
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Not connected: pg-1'
+    })
+  })
+
+  it('returns a structured failure for malformed object payloads instead of the legacy success fallback', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), { tableName: 'users', rowData: { id: 1 } })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Invalid payload for db:insert-row.'
+    })
+    expect(manager.query).not.toHaveBeenCalled()
+  })
+
+  it('returns a structured failure before execution when delete payload has no primary keys', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:delete-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        pkColumns: [],
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Delete row mutation requires at least one primary key column.'
+    })
+    expect(manager.query).not.toHaveBeenCalled()
+  })
+
   it('keeps the legacy mutation signature on a compatibility fallback for current callers', async () => {
     const { registerIpcHandlers } = await import('../../../src/main/ipc')
     const manager = getManagerStub()

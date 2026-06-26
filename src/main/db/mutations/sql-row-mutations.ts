@@ -1,16 +1,9 @@
 import type { ColumnInfo, DatabaseType } from '../types'
+import { getCapabilitiesForType } from '../capabilities'
 
-const SQL_MUTATION_DATABASE_TYPES = new Set<DatabaseType>([
-  'mysql',
-  'mariadb',
-  'postgres',
-  'sqlite',
-  'mssql',
-  'cockroachdb',
-  'clickhouse',
-  'cassandra',
-  'oracle'
-])
+export const INSERT_ROW_SQL_ERROR = 'Insert row mutation requires at least one column value.'
+export const DELETE_ROW_SQL_ERROR = 'Delete row mutation requires at least one primary key column.'
+export const DUPLICATE_ROW_SQL_ERROR = 'Duplicate row mutation requires at least one non-primary-key column.'
 
 export interface SqlMutationTarget {
   tableName: string
@@ -37,7 +30,8 @@ export interface SqlDuplicateRowMutationPayload extends SqlMutationTarget {
 }
 
 export function isSqlMutationDatabaseType(databaseType: DatabaseType): boolean {
-  return SQL_MUTATION_DATABASE_TYPES.has(databaseType)
+  const capabilities = getCapabilitiesForType(databaseType)
+  return capabilities.canInsertRow && capabilities.canDeleteRow && capabilities.canDuplicateRow
 }
 
 export function quoteIdentifier(name: string, databaseType: DatabaseType): string {
@@ -77,8 +71,20 @@ export function qualifyTable(target: SqlMutationTarget): string {
     : qualifiedTableName
 }
 
-export function buildInsertSql(target: SqlMutationTarget, rowData: Record<string, unknown>): string {
+function getDuplicateRowData(
+  rowData: Record<string, unknown>,
+  pkColumns: ColumnInfo[]
+): Record<string, unknown> {
+  const nextRow = { ...rowData }
+  for (const pkColumn of pkColumns) {
+    delete nextRow[pkColumn.name]
+  }
+  return nextRow
+}
+
+export function buildInsertSql(target: SqlMutationTarget, rowData: Record<string, unknown>): string | null {
   const columns = Object.keys(rowData)
+  if (columns.length === 0) return null
   const columnSql = columns.map((column) => quoteIdentifier(column, target.databaseType)).join(', ')
   const valueSql = columns.map((column) => quoteValue(rowData[column], target.databaseType)).join(', ')
   return `INSERT INTO ${qualifyTable(target)} (${columnSql}) VALUES (${valueSql});`
@@ -88,7 +94,8 @@ export function buildDeleteSql(
   target: SqlMutationTarget,
   pkColumns: ColumnInfo[],
   rowData: Record<string, unknown>
-): string {
+): string | null {
+  if (pkColumns.length === 0) return null
   const whereSql = pkColumns
     .map((pkColumn) => {
       return `${quoteIdentifier(pkColumn.name, target.databaseType)} = ${quoteValue(rowData[pkColumn.name], target.databaseType)}`
@@ -102,10 +109,8 @@ export function buildDuplicateSql(
   target: SqlMutationTarget,
   rowData: Record<string, unknown>,
   pkColumns: ColumnInfo[]
-): string {
-  const nextRow = { ...rowData }
-  for (const pkColumn of pkColumns) {
-    delete nextRow[pkColumn.name]
-  }
+): string | null {
+  const nextRow = getDuplicateRowData(rowData, pkColumns)
+  if (Object.keys(nextRow).length === 0) return null
   return buildInsertSql(target, nextRow)
 }

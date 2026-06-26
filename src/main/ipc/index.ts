@@ -5,6 +5,9 @@ import {
   buildDeleteSql,
   buildDuplicateSql,
   buildInsertSql,
+  DELETE_ROW_SQL_ERROR,
+  DUPLICATE_ROW_SQL_ERROR,
+  INSERT_ROW_SQL_ERROR,
   isSqlMutationDatabaseType,
   type SqlDeleteRowMutationPayload,
   type SqlDuplicateRowMutationPayload,
@@ -42,6 +45,20 @@ interface MutationExecutionResult {
   error?: string
 }
 
+function getErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error || 'Unknown error'
+  if (error instanceof Error) return error.message || 'Unknown error'
+  return 'Unknown error'
+}
+
+function createMutationFailure(error: unknown, sql = ''): MutationExecutionResult {
+  return {
+    success: false,
+    sql,
+    error: getErrorMessage(error)
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -65,6 +82,10 @@ function isDeleteRowMutationPayload(value: unknown): value is SqlDeleteRowMutati
 
 function isDuplicateRowMutationPayload(value: unknown): value is SqlDuplicateRowMutationPayload {
   return isDeleteRowMutationPayload(value)
+}
+
+function invalidMutationPayloadResult(channel: string): MutationExecutionResult {
+  return createMutationFailure(`Invalid payload for ${channel}.`)
 }
 
 export function registerIpcHandlers(manager: ConnectionManager, updateService?: UpdateService): void {
@@ -157,16 +178,27 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     connectionId: string,
     hintedType: ConnectionConfig['type'],
     payloadTarget: Omit<SqlMutationTarget, 'databaseType'>,
-    buildSql: (target: SqlMutationTarget) => string
+    buildSql: (target: SqlMutationTarget) => string | null,
+    invalidSqlError: string
   ): Promise<MutationExecutionResult> => {
-    const resolvedTarget = getSqlMutationTarget(channel, connectionId, hintedType, payloadTarget)
-    if ('success' in resolvedTarget) {
-      return resolvedTarget
-    }
+    let sql = ''
+    try {
+      const resolvedTarget = getSqlMutationTarget(channel, connectionId, hintedType, payloadTarget)
+      if ('success' in resolvedTarget) {
+        return resolvedTarget
+      }
 
-    const sql = buildSql(resolvedTarget)
-    const result = await manager.query(connectionId, sql)
-    return { success: !result.error, sql, error: result.error }
+      const builtSql = buildSql(resolvedTarget)
+      if (!builtSql) {
+        return createMutationFailure(invalidSqlError)
+      }
+
+      sql = builtSql
+      const result = await manager.query(connectionId, sql)
+      return { success: !result.error, sql, error: result.error }
+    } catch (error) {
+      return createMutationFailure(error, sql)
+    }
   }
 
   const handleLegacyRowMutationFallback = (channel: string, tableName: string): boolean => {
@@ -240,8 +272,11 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
   )
 
   handleWithLogging('db:delete-row', async (_event: IpcMainInvokeEvent, payloadOrTableName: unknown) => {
-    if (!isDeleteRowMutationPayload(payloadOrTableName)) {
+    if (typeof payloadOrTableName === 'string') {
       return handleLegacyRowMutationFallback('db:delete-row', String(payloadOrTableName))
+    }
+    if (!isDeleteRowMutationPayload(payloadOrTableName)) {
+      return invalidMutationPayloadResult('db:delete-row')
     }
 
     return executeSqlMutation(
@@ -253,13 +288,17 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
         database: payloadOrTableName.database,
         schema: payloadOrTableName.schema
       },
-      (target) => buildDeleteSql(target, payloadOrTableName.pkColumns, payloadOrTableName.rowData)
+      (target) => buildDeleteSql(target, payloadOrTableName.pkColumns, payloadOrTableName.rowData),
+      DELETE_ROW_SQL_ERROR
     )
   })
 
   handleWithLogging('db:insert-row', async (_event: IpcMainInvokeEvent, payloadOrTableName: unknown) => {
-    if (!isInsertRowMutationPayload(payloadOrTableName)) {
+    if (typeof payloadOrTableName === 'string') {
       return handleLegacyRowMutationFallback('db:insert-row', String(payloadOrTableName))
+    }
+    if (!isInsertRowMutationPayload(payloadOrTableName)) {
+      return invalidMutationPayloadResult('db:insert-row')
     }
 
     return executeSqlMutation(
@@ -271,13 +310,17 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
         database: payloadOrTableName.database,
         schema: payloadOrTableName.schema
       },
-      (target) => buildInsertSql(target, payloadOrTableName.rowData)
+      (target) => buildInsertSql(target, payloadOrTableName.rowData),
+      INSERT_ROW_SQL_ERROR
     )
   })
 
   handleWithLogging('db:duplicate-row', async (_event: IpcMainInvokeEvent, payloadOrTableName: unknown) => {
-    if (!isDuplicateRowMutationPayload(payloadOrTableName)) {
+    if (typeof payloadOrTableName === 'string') {
       return handleLegacyRowMutationFallback('db:duplicate-row', String(payloadOrTableName))
+    }
+    if (!isDuplicateRowMutationPayload(payloadOrTableName)) {
+      return invalidMutationPayloadResult('db:duplicate-row')
     }
 
     return executeSqlMutation(
@@ -289,7 +332,8 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
         database: payloadOrTableName.database,
         schema: payloadOrTableName.schema
       },
-      (target) => buildDuplicateSql(target, payloadOrTableName.rowData, payloadOrTableName.pkColumns)
+      (target) => buildDuplicateSql(target, payloadOrTableName.rowData, payloadOrTableName.pkColumns),
+      DUPLICATE_ROW_SQL_ERROR
     )
   })
 

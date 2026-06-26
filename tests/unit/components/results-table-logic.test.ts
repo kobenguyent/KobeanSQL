@@ -96,6 +96,15 @@ describe('ResultsTable Logic', () => {
         `INSERT INTO "public"."users" ("name") VALUES ('Ada''s');`
       )
     })
+
+    it('returns null for invalid empty delete and duplicate mutation shapes', () => {
+      expect(buildMainDeleteSql(target, [], row)).toBeNull()
+      expect(buildMainDuplicateSql(target, { id: 1 }, [...pk])).toBeNull()
+    })
+
+    it('returns null for inserts with no columns to write', () => {
+      expect(buildMainInsertSql(target, {})).toBeNull()
+    })
   })
 
   describe('buildSelectTableSql', () => {
