@@ -8,10 +8,11 @@ import {
   DELETE_ROW_SQL_ERROR,
   DUPLICATE_ROW_SQL_ERROR,
   INSERT_ROW_SQL_ERROR,
-  isSqlMutationDatabaseType,
+  supportsSqlMutationCapability,
   type SqlDeleteRowMutationPayload,
   type SqlDuplicateRowMutationPayload,
   type SqlInsertRowMutationPayload,
+  type SqlMutationCapability,
   type SqlMutationTarget
 } from '../db/mutations/sql-row-mutations'
 import {
@@ -43,6 +44,28 @@ interface MutationExecutionResult {
   success: boolean
   sql: string
   error?: string
+}
+
+type SqlMutationChannel = 'db:insert-row' | 'db:delete-row' | 'db:duplicate-row'
+
+interface SqlMutationRequirement {
+  capability: SqlMutationCapability
+  unsupportedError: (databaseType: ConnectionConfig['type']) => string
+}
+
+const SQL_MUTATION_REQUIREMENTS: Record<SqlMutationChannel, SqlMutationRequirement> = {
+  'db:insert-row': {
+    capability: 'canInsertRow',
+    unsupportedError: (databaseType) => `Insert row mutations are not supported for ${databaseType}.`
+  },
+  'db:delete-row': {
+    capability: 'canDeleteRow',
+    unsupportedError: (databaseType) => `Delete row mutations are not supported for ${databaseType}.`
+  },
+  'db:duplicate-row': {
+    capability: 'canDuplicateRow',
+    unsupportedError: (databaseType) => `Duplicate row mutations are not supported for ${databaseType}.`
+  }
 }
 
 function getErrorMessage(error: unknown): string {
@@ -143,7 +166,7 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
   }
 
   const getSqlMutationTarget = (
-    channel: string,
+    channel: SqlMutationChannel,
     connectionId: string,
     hintedType: ConnectionConfig['type'],
     payloadTarget: Omit<SqlMutationTarget, 'databaseType'>
@@ -159,12 +182,10 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
       })
     }
 
-    if (!isSqlMutationDatabaseType(activeType)) {
-      return {
-        success: false,
-        sql: '',
-        error: `Row mutations are not supported for ${activeType}.`
-      }
+    const { capability, unsupportedError } = SQL_MUTATION_REQUIREMENTS[channel]
+    const capabilities = manager.getCapabilitiesForType(activeType)
+    if (!supportsSqlMutationCapability(capabilities, capability)) {
+      return createMutationFailure(unsupportedError(activeType))
     }
 
     return {
@@ -174,7 +195,7 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
   }
 
   const executeSqlMutation = async (
-    channel: string,
+    channel: SqlMutationChannel,
     connectionId: string,
     hintedType: ConnectionConfig['type'],
     payloadTarget: Omit<SqlMutationTarget, 'databaseType'>,

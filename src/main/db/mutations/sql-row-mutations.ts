@@ -1,5 +1,5 @@
 import type { ColumnInfo, DatabaseType } from '../types'
-import { getCapabilitiesForType } from '../capabilities'
+import type { DatabaseManagementCapabilities } from '../capabilities'
 
 export const INSERT_ROW_SQL_ERROR = 'Insert row mutation requires at least one column value.'
 export const DELETE_ROW_SQL_ERROR = 'Delete row mutation requires at least one primary key column.'
@@ -29,9 +29,16 @@ export interface SqlDuplicateRowMutationPayload extends SqlMutationTarget {
   rowData: Record<string, unknown>
 }
 
-export function isSqlMutationDatabaseType(databaseType: DatabaseType): boolean {
-  const capabilities = getCapabilitiesForType(databaseType)
-  return capabilities.canInsertRow && capabilities.canDeleteRow && capabilities.canDuplicateRow
+export type SqlMutationCapability = keyof Pick<
+  DatabaseManagementCapabilities,
+  'canInsertRow' | 'canDeleteRow' | 'canDuplicateRow'
+>
+
+export function supportsSqlMutationCapability(
+  capabilities: Pick<DatabaseManagementCapabilities, SqlMutationCapability>,
+  capability: SqlMutationCapability
+): boolean {
+  return capabilities[capability]
 }
 
 export function quoteIdentifier(name: string, databaseType: DatabaseType): string {

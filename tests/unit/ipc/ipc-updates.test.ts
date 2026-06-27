@@ -64,7 +64,16 @@ function getManagerStub(overrides: Record<string, unknown> = {}) {
     isConnected: vi.fn(),
     query: vi.fn(),
     getConnectionDialect: vi.fn(() => 'postgres'),
-    getCapabilitiesForType: vi.fn(),
+    getCapabilitiesForType: vi.fn(() => ({
+      canInsertRow: true,
+      canDeleteRow: true,
+      canDuplicateRow: true,
+      canInlineUpdateRow: true,
+      canCopyTable: true,
+      canManageSchema: true,
+      supportsForeignKeys: true,
+      supportsProcedures: true
+    })),
     getDatabases: vi.fn(),
     getTables: vi.fn(),
     getColumns: vi.fn(),
@@ -481,6 +490,123 @@ describe('IPC database mutation channels', () => {
       success: false,
       sql: '',
       error: 'Delete row mutation requires at least one primary key column.'
+    })
+    expect(manager.query).not.toHaveBeenCalled()
+  })
+
+  it('validates row-mutation support per operation instead of as an all-or-nothing gate', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const queryMock = vi.fn().mockResolvedValue({ columns: [], rows: [], rowCount: 1, duration: 1 })
+    const manager = getManagerStub({
+      query: queryMock,
+      getConnectionDialect: vi.fn(() => 'postgres'),
+      getCapabilitiesForType: vi.fn(() => ({
+        canInsertRow: true,
+        canDeleteRow: false,
+        canDuplicateRow: false,
+        canInlineUpdateRow: true,
+        canCopyTable: true,
+        canManageSchema: true,
+        supportsForeignKeys: true,
+        supportsProcedures: true
+      }))
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: true,
+      sql: `INSERT INTO "public"."users" ("id", "name") VALUES (1, 'Ada');`,
+      error: undefined
+    })
+
+    await expect(
+      handlers['db:delete-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Delete row mutations are not supported for postgres.'
+    })
+
+    await expect(
+      handlers['db:duplicate-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Duplicate row mutations are not supported for postgres.'
+    })
+
+    expect(queryMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a structured failure before execution when insert payload has no writable columns', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        rowData: {}
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Insert row mutation requires at least one column value.'
+    })
+    expect(manager.query).not.toHaveBeenCalled()
+  })
+
+  it('returns a structured failure before execution when duplicate payload only contains primary-key columns', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:duplicate-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+        rowData: { id: 1 }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Duplicate row mutation requires at least one non-primary-key column.'
     })
     expect(manager.query).not.toHaveBeenCalled()
   })
