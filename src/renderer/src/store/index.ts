@@ -1,5 +1,13 @@
 import { create } from 'zustand'
 import type {
+  CopyTableRequest,
+  CopyTableResult,
+  DeleteRowMutationRequest,
+  DuplicateRowMutationRequest,
+  InsertRowMutationRequest,
+  RowMutationResult
+} from '../../../preload'
+import type {
   ConnectionConfig,
   QueryTab,
   QueryResult,
@@ -73,9 +81,11 @@ declare global {
       isConnected(id: string): Promise<boolean>
       query(connectionId: string, sql: string, params?: unknown[]): Promise<QueryResult>
       getCapabilitiesForType(type: DatabaseType): Promise<DatabaseManagementCapabilities>
-      deleteRow(tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean>
-      insertRow(tableName: string, rowData: Record<string, unknown>): Promise<boolean>
-      duplicateRow(tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean>
+      deleteRow(payload: DeleteRowMutationRequest): Promise<RowMutationResult>
+      insertRow(payload: InsertRowMutationRequest): Promise<RowMutationResult>
+      duplicateRow(payload: DuplicateRowMutationRequest): Promise<RowMutationResult>
+      copyTablePreview(payload: CopyTableRequest): Promise<CopyTableResult>
+      copyTableExecute(payload: CopyTableRequest): Promise<CopyTableResult>
       getDatabases(connectionId: string): Promise<string[]>
       getTables(connectionId: string, database?: string): Promise<TableInfo[]>
       getColumns(connectionId: string, table: string, database?: string): Promise<ColumnInfo[]>

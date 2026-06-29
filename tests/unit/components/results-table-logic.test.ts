@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildBulkDeleteRowMutationRequests,
   quoteIdentifierForDb,
   quoteValueForDb,
   buildInlineUpdateSql,
   buildDeleteSql,
+  buildDeleteRowMutationRequest,
+  buildDuplicateRowMutationRequest,
+  buildInsertRowMutationRequest,
   buildInlineUpdateMongoQuery,
   buildDeleteMongoQuery,
-  buildMongoPkFilter
+  buildMongoPkFilter,
+  getResultsTableActionAvailability
 } from '../../../src/renderer/src/components/ResultsTable'
 import {
   buildInsertSql as buildMainInsertSql,
@@ -104,6 +109,193 @@ describe('ResultsTable Logic', () => {
 
     it('returns null for inserts with no columns to write', () => {
       expect(buildMainInsertSql(target, {})).toBeNull()
+    })
+  })
+
+  describe('row mutation payload builders', () => {
+    const pk = [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }] as const
+    const row = { id: 1, name: 'Ada' }
+
+    it('builds insert payloads with the live renderer context', () => {
+      expect(
+        buildInsertRowMutationRequest({
+          connectionId: 'pg-1',
+          tableName: 'users',
+          database: 'app',
+          schema: 'public',
+          databaseType: 'postgres',
+          rowData: row
+        })
+      ).toEqual({
+        connectionId: 'pg-1',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        databaseType: 'postgres',
+        rowData: row
+      })
+    })
+
+    it('builds delete payloads with primary-key metadata and row data', () => {
+      expect(
+        buildDeleteRowMutationRequest({
+          connectionId: 'pg-1',
+          tableName: 'users',
+          database: 'app',
+          schema: 'public',
+          databaseType: 'postgres',
+          pkColumns: [...pk],
+          rowData: {
+            _tempId: 'row-1',
+            ...row
+          }
+        })
+      ).toEqual({
+        connectionId: 'pg-1',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        databaseType: 'postgres',
+        pkColumns: [...pk],
+        rowData: row
+      })
+    })
+
+    it('builds duplicate payloads with the same identifying metadata as delete', () => {
+      expect(
+        buildDuplicateRowMutationRequest({
+          connectionId: 'pg-1',
+          tableName: 'users',
+          database: 'app',
+          schema: 'public',
+          databaseType: 'postgres',
+          pkColumns: [...pk],
+          rowData: row
+        })
+      ).toEqual({
+        connectionId: 'pg-1',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        databaseType: 'postgres',
+        pkColumns: [...pk],
+        rowData: row
+      })
+    })
+
+    it('strips renderer-only row metadata before building duplicate payloads', () => {
+      expect(
+        buildDuplicateRowMutationRequest({
+          connectionId: 'pg-1',
+          tableName: 'users',
+          database: 'app',
+          schema: 'public',
+          databaseType: 'postgres',
+          pkColumns: [...pk],
+          rowData: {
+            _tempId: 'row-1',
+            ...row
+          }
+        })
+      ).toEqual({
+        connectionId: 'pg-1',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        databaseType: 'postgres',
+        pkColumns: [...pk],
+        rowData: row
+      })
+    })
+
+    it('builds one structured delete request per selected row for bulk deletes', () => {
+      expect(
+        buildBulkDeleteRowMutationRequests({
+          connectionId: 'pg-1',
+          tableName: 'users',
+          database: 'app',
+          schema: 'public',
+          databaseType: 'postgres',
+          pkColumns: [...pk],
+          rows: [
+            { _tempId: 'row-1', id: 1, name: 'Ada' },
+            { _tempId: 'row-2', id: 2, name: 'Grace' }
+          ]
+        })
+      ).toEqual([
+        {
+          connectionId: 'pg-1',
+          tableName: 'users',
+          database: 'app',
+          schema: 'public',
+          databaseType: 'postgres',
+          pkColumns: [...pk],
+          rowData: { id: 1, name: 'Ada' }
+        },
+        {
+          connectionId: 'pg-1',
+          tableName: 'users',
+          database: 'app',
+          schema: 'public',
+          databaseType: 'postgres',
+          pkColumns: [...pk],
+          rowData: { id: 2, name: 'Grace' }
+        }
+      ])
+    })
+  })
+
+  describe('capability gating', () => {
+    it('enables only the row actions allowed by the active connection capabilities', () => {
+      expect(
+        getResultsTableActionAvailability({
+          hasMutationContext: true,
+          hasPrimaryKey: true,
+          capabilities: {
+            canInsertRow: true,
+            canDeleteRow: false,
+            canDuplicateRow: true,
+            canInlineUpdateRow: false,
+            canCopyTable: false,
+            canManageSchema: false,
+            supportsForeignKeys: false,
+            supportsProcedures: false
+          }
+        })
+      ).toEqual({
+        canInsertRow: true,
+        canDeleteRow: false,
+        canDuplicateRow: true,
+        canInlineUpdateRow: false,
+        canShowRowActions: true,
+        canBulkDelete: false
+      })
+    })
+
+    it('disables mutation affordances when there is no active table mutation context', () => {
+      expect(
+        getResultsTableActionAvailability({
+          hasMutationContext: false,
+          hasPrimaryKey: true,
+          capabilities: {
+            canInsertRow: true,
+            canDeleteRow: true,
+            canDuplicateRow: true,
+            canInlineUpdateRow: true,
+            canCopyTable: false,
+            canManageSchema: false,
+            supportsForeignKeys: false,
+            supportsProcedures: false
+          }
+        })
+      ).toEqual({
+        canInsertRow: false,
+        canDeleteRow: false,
+        canDuplicateRow: false,
+        canInlineUpdateRow: false,
+        canShowRowActions: false,
+        canBulkDelete: false
+      })
     })
   })
 

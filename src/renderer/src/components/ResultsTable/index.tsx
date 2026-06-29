@@ -25,7 +25,19 @@ import {
   ExternalLink,
   ArrowUp, ArrowDown
 } from 'lucide-react'
-import type { QueryResult, ColumnInfo, DatabaseType, ForeignKeyInfo } from '../../types'
+import type {
+  QueryResult,
+  ColumnInfo,
+  DatabaseType,
+  ForeignKeyInfo,
+  DatabaseManagementCapabilities
+} from '../../types'
+import type {
+  DeleteRowMutationRequest,
+  DuplicateRowMutationRequest,
+  InsertRowMutationRequest,
+  RowMutationResult
+} from '../../../../preload'
 import { useAppStore } from '../../store'
 import { useThemeClass } from '../../hooks/useThemeClass'
 
@@ -36,6 +48,94 @@ interface Props {
   database?: string
   schema?: string
   onRefresh?: () => void
+}
+
+interface ResultsTableActionAvailability {
+  canInsertRow: boolean
+  canDeleteRow: boolean
+  canDuplicateRow: boolean
+  canInlineUpdateRow: boolean
+  canShowRowActions: boolean
+  canBulkDelete: boolean
+}
+
+interface BulkDeleteRowMutationRequestParams extends Omit<DeleteRowMutationRequest, 'rowData'> {
+  rows: Record<string, unknown>[]
+}
+
+function sanitizeRowMutationData(rowData: Record<string, unknown>): Record<string, unknown> {
+  const { _tempId: _ignoredTempId, ...sanitizedRowData } = rowData as Record<string, unknown> & { _tempId?: unknown }
+  return sanitizedRowData
+}
+
+export function buildInsertRowMutationRequest(
+  request: InsertRowMutationRequest
+): InsertRowMutationRequest {
+  return {
+    ...request,
+    rowData: sanitizeRowMutationData(request.rowData)
+  }
+}
+
+export function buildDeleteRowMutationRequest(
+  request: DeleteRowMutationRequest
+): DeleteRowMutationRequest {
+  return {
+    ...request,
+    rowData: sanitizeRowMutationData(request.rowData)
+  }
+}
+
+export function buildDuplicateRowMutationRequest(
+  request: DuplicateRowMutationRequest
+): DuplicateRowMutationRequest {
+  return {
+    ...request,
+    rowData: sanitizeRowMutationData(request.rowData)
+  }
+}
+
+export function buildBulkDeleteRowMutationRequests(
+  request: BulkDeleteRowMutationRequestParams
+): DeleteRowMutationRequest[] {
+  const { rows, ...sharedRequest } = request
+  return rows.map((rowData) => buildDeleteRowMutationRequest({
+    ...sharedRequest,
+    rowData
+  }))
+}
+
+export function getResultsTableActionAvailability({
+  hasMutationContext,
+  hasPrimaryKey,
+  capabilities
+}: {
+  hasMutationContext: boolean
+  hasPrimaryKey: boolean
+  capabilities?: DatabaseManagementCapabilities
+}): ResultsTableActionAvailability {
+  if (!hasMutationContext || !capabilities) {
+    return {
+      canInsertRow: false,
+      canDeleteRow: false,
+      canDuplicateRow: false,
+      canInlineUpdateRow: false,
+      canShowRowActions: false,
+      canBulkDelete: false
+    }
+  }
+
+  const canDeleteRow = capabilities.canDeleteRow && hasPrimaryKey
+  const canDuplicateRow = capabilities.canDuplicateRow && hasPrimaryKey
+
+  return {
+    canInsertRow: capabilities.canInsertRow,
+    canDeleteRow,
+    canDuplicateRow,
+    canInlineUpdateRow: capabilities.canInlineUpdateRow,
+    canShowRowActions: canDeleteRow || canDuplicateRow,
+    canBulkDelete: canDeleteRow
+  }
 }
 
 function cellClass(value: unknown): string {
@@ -159,6 +259,10 @@ export function buildDeleteMongoQuery(
   if (!filter) return null
   const safeCollectionName = JSON.stringify(collectionName)
   return `db.getCollection(${safeCollectionName}).deleteOne(${JSON.stringify(filter)})`
+}
+
+function getMutationResultErrorMessage(action: string, result: RowMutationResult): string {
+  return result.error || `Failed to ${action} row.`
 }
 
 export function getVisibleRowSelectionRange(
@@ -519,7 +623,7 @@ export function ResultsTable({
   schema,
   onRefresh
 }: Props): React.JSX.Element {
-  const { connections, openTableInTab } = useAppStore()
+  const { connections, connectionCapabilities, openTableInTab } = useAppStore()
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
@@ -548,7 +652,11 @@ export function ResultsTable({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
   // Delete confirmation state (Feature 2)
-  const [pendingDelete, setPendingDelete] = useState<{ sqls: string[]; count: number } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{
+    requests: DeleteRowMutationRequest[]
+    sqls: string[]
+    count: number
+  } | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -583,7 +691,12 @@ export function ResultsTable({
   }, [result.rows])
 
   const conn = connectionId ? connections.find((c) => c.id === connectionId) : null
-  const canEdit = !!(connectionId && tableName && conn)
+  const hasMutationContext = !!(connectionId && tableName && conn)
+  const actionAvailability = getResultsTableActionAvailability({
+    hasMutationContext,
+    hasPrimaryKey: pkColumns.length > 0,
+    capabilities: connectionId ? connectionCapabilities[connectionId] : undefined
+  })
 
   // Load PK columns and Foreign Keys when in table mode
   useEffect(() => {
@@ -681,7 +794,7 @@ export function ResultsTable({
   }
 
   function handleCellDoubleClick(rowIdx: number, col: string, value: unknown) {
-    if (!canEdit) return
+    if (!actionAvailability.canInlineUpdateRow) return
     // Previous edit is implicitly replaced without saving
     setEditingCell({ rowIdx, col, original: value })
     setEditValue(value === null || value === undefined ? '' : String(value))
@@ -744,14 +857,28 @@ export function ResultsTable({
   }
 
   function handleDeleteSelected(rows: { index: number; original: Record<string, unknown> }[]) {
-    const sqls = getSelectedVisibleRows(rows, selectedRows)
-      .map((r) => buildDeleteSqlForRow(r.original))
+    if (!actionAvailability.canBulkDelete || !connectionId || !tableName || !conn) {
+      showTableError('Delete row is not supported for this connection or table.')
+      return
+    }
+    const selectedRowData = getSelectedVisibleRows(rows, selectedRows).map((row) => row.original)
+    const requests = buildBulkDeleteRowMutationRequests({
+      connectionId,
+      tableName,
+      database,
+      schema,
+      databaseType: conn.type,
+      pkColumns,
+      rows: selectedRowData
+    })
+    const sqls = selectedRowData
+      .map((row) => buildDeleteSqlForRow(row))
       .filter((s): s is string => s !== null)
     if (sqls.length === 0) {
       showTableError('Cannot delete: table has no primary key columns, which are required to safely identify rows for deletion.')
       return
     }
-    setPendingDelete({ sqls, count: sqls.length })
+    setPendingDelete({ requests, sqls, count: sqls.length })
   }
 
   async function executeDelete() {
@@ -759,10 +886,10 @@ export function ResultsTable({
     setIsDeleting(true)
     setDeleteError(null)
     try {
-      for (const sql of pendingDelete.sqls) {
-        const res = await window.db.query(connectionId, sql)
-        if (res.error) {
-          setDeleteError(res.error)
+      for (const request of pendingDelete.requests) {
+        const result = await window.db.deleteRow(request)
+        if (!result.success) {
+          setDeleteError(getMutationResultErrorMessage('delete', result))
           setIsDeleting(false)
           return
         }
@@ -779,6 +906,10 @@ export function ResultsTable({
   }
 
   const handleAddRow = () => {
+    if (!actionAvailability.canInsertRow) {
+      showTableError('Insert row is not supported for this connection or table.')
+      return
+    }
     if (!tableName) return
     const newTempId = `new-row-${Date.now()}`
     const newRow: Record<string, unknown> & { _tempId: string } = {
@@ -799,7 +930,7 @@ export function ResultsTable({
   }
 
   const handleSaveNewRow = async (tempId: string) => {
-    if (!tableName || !connectionId) return
+    if (!tableName || !connectionId || !conn) return
     
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { _tempId, ...rowData } = addingRowData
@@ -813,14 +944,21 @@ export function ResultsTable({
     })
 
     try {
-      const success = await window.db.insertRow(tableName, rowData)
-      if (success) {
+      const result = await window.db.insertRow(buildInsertRowMutationRequest({
+        connectionId,
+        tableName,
+        database,
+        schema,
+        databaseType: conn.type,
+        rowData
+      }))
+      if (result.success) {
         setAddingRowId(null)
         setAddingRowData({})
         showTableSuccess('Row inserted successfully.')
         onRefresh?.()
       } else {
-        showTableError('Failed to insert row.')
+        showTableError(getMutationResultErrorMessage('insert', result))
       }
     } catch (err) {
       showTableError(`Error inserting row: ${(err as Error).message}`)
@@ -834,17 +972,12 @@ export function ResultsTable({
   }
 
   const handleDuplicateRow = async (row: Record<string, unknown> & { _tempId?: string }) => {
-    if (!tableName || !connectionId || !row._tempId) return
-    
-    if (pkColumns.length === 0) {
-      showTableError('Cannot duplicate: table has no primary key columns.')
+    if (!tableName || !connectionId || !conn || !row._tempId) return
+
+    if (!actionAvailability.canDuplicateRow) {
+      showTableError('Duplicate row is not supported for this connection or table.')
       return
     }
-
-    const primaryKeyObject = pkColumns.reduce((acc, col) => {
-      acc[col.name] = row[col.name]
-      return acc
-    }, {} as Record<string, unknown>)
 
     setSavingRowIds(prev => {
       const next = new Set(prev)
@@ -853,12 +986,20 @@ export function ResultsTable({
     })
 
     try {
-      const success = await window.db.duplicateRow(tableName, primaryKeyObject)
-      if (success) {
+      const result = await window.db.duplicateRow(buildDuplicateRowMutationRequest({
+        connectionId,
+        tableName,
+        database,
+        schema,
+        databaseType: conn.type,
+        pkColumns,
+        rowData: row
+      }))
+      if (result.success) {
         showTableSuccess('Row duplicated successfully.')
         onRefresh?.()
       } else {
-        showTableError('Failed to duplicate row.')
+        showTableError(getMutationResultErrorMessage('duplicate', result))
       }
     } catch (err) {
       showTableError(`Error duplicating row: ${(err as Error).message}`)
@@ -872,29 +1013,32 @@ export function ResultsTable({
   }
 
   const handleDeleteRow = async (row: Record<string, unknown> & { _tempId?: string }, index: number) => {
-    if (!tableName || !connectionId || !row._tempId) return
+    if (!tableName || !connectionId || !conn || !row._tempId) return
 
-    if (pkColumns.length === 0) {
-      showTableError('Cannot delete: table has no primary key columns.')
+    if (!actionAvailability.canDeleteRow) {
+      showTableError('Delete row is not supported for this connection or table.')
       return
     }
 
     if (!confirm('Are you sure you want to delete this row?')) return
-
-    const primaryKeyObject = pkColumns.reduce((acc, col) => {
-      acc[col.name] = row[col.name]
-      return acc
-    }, {} as Record<string, unknown>)
 
     // Optimistically remove from UI
     const originalRows = [...localRows]
     setLocalRows(prev => prev.filter(r => r._tempId !== row._tempId))
 
     try {
-      const success = await window.db.deleteRow(tableName, primaryKeyObject)
-      if (!success) {
+      const result = await window.db.deleteRow(buildDeleteRowMutationRequest({
+        connectionId,
+        tableName,
+        database,
+        schema,
+        databaseType: conn.type,
+        pkColumns,
+        rowData: row
+      }))
+      if (!result.success) {
         setLocalRows(originalRows)
-        showTableError('Failed to delete row from database.')
+        showTableError(getMutationResultErrorMessage('delete', result))
       } else {
         setSelectedRows(prev => {
           const next = new Set(prev)
@@ -977,9 +1121,15 @@ export function ResultsTable({
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', minWidth: 0 }}>
         <span
-          onDoubleClick={canEdit ? () => handleCellDoubleClick(rowIdx, colName, value) : undefined}
-          style={{ cursor: canEdit ? 'text' : 'default', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
-          title={canEdit ? 'Double-click to edit' : undefined}
+          onDoubleClick={actionAvailability.canInlineUpdateRow ? () => handleCellDoubleClick(rowIdx, colName, value) : undefined}
+          style={{
+            cursor: actionAvailability.canInlineUpdateRow ? 'text' : 'default',
+            flex: 1,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}
+          title={actionAvailability.canInlineUpdateRow ? 'Double-click to edit' : undefined}
         >
           <CellDisplay
             value={value}
@@ -1060,22 +1210,26 @@ export function ResultsTable({
           <Loader2 size={12} className="spin" style={{ color: 'var(--accent)' }} />
         ) : (
           <>
-            <button
-              className="cell-action-btn"
-              style={{ color: 'var(--color-info)', borderColor: 'rgba(96, 165, 250, 0.3)' }}
-              onClick={() => handleDuplicateRow(row)}
-              title="Duplicate Row"
-            >
-              <Copy size={11} />
-            </button>
-            <button
-              className="cell-action-btn"
-              style={{ color: 'var(--color-error)', borderColor: 'rgba(248, 113, 113, 0.3)' }}
-              onClick={() => handleDeleteRow(row, index)}
-              title="Delete Row"
-            >
-              <Trash2 size={11} />
-            </button>
+            {actionAvailability.canDuplicateRow && (
+              <button
+                className="cell-action-btn"
+                style={{ color: 'var(--color-info)', borderColor: 'rgba(96, 165, 250, 0.3)' }}
+                onClick={() => handleDuplicateRow(row)}
+                title="Duplicate Row"
+              >
+                <Copy size={11} />
+              </button>
+            )}
+            {actionAvailability.canDeleteRow && (
+              <button
+                className="cell-action-btn"
+                style={{ color: 'var(--color-error)', borderColor: 'rgba(248, 113, 113, 0.3)' }}
+                onClick={() => handleDeleteRow(row, index)}
+                title="Delete Row"
+              >
+                <Trash2 size={11} />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -1097,7 +1251,7 @@ export function ResultsTable({
         }
       }))
 
-      if (canEdit) {
+      if (actionAvailability.canShowRowActions || addingRowId !== null) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         baseCols.push({
           id: 'actions',
@@ -1113,7 +1267,7 @@ export function ResultsTable({
 
       return baseCols
     },
-    [result.columns, localRows, editingCell, editValue, canEdit, pkColumns, foreignKeys, schema, database, tableName, conn?.type, addingRowId, addingRowData, savingRowIds, openTableInTab]
+    [result.columns, localRows, editingCell, editValue, actionAvailability, pkColumns, foreignKeys, schema, database, tableName, conn?.type, addingRowId, addingRowData, savingRowIds, openTableInTab]
   )
 
   const table = useReactTable({
@@ -1224,7 +1378,7 @@ export function ResultsTable({
               · horizontal view
             </span>
           )}
-          {canEdit && !selCount && (
+          {actionAvailability.canInlineUpdateRow && !selCount && (
             <span style={{ marginLeft: 6, color: 'var(--text-tertiary)', fontSize: 'var(--font-size-xs)' }}>
               · <Edit2 size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> double-click to edit
             </span>
@@ -1279,7 +1433,7 @@ export function ResultsTable({
         {selCount > 0 && (
           <span className="selection-badge">
             {selCount} selected
-            {canEdit && (
+            {actionAvailability.canBulkDelete && (
               <button
                 className="icon-btn icon-btn-danger"
                 style={{ marginLeft: 6 }}
@@ -1309,7 +1463,7 @@ export function ResultsTable({
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-          {canEdit && (
+          {actionAvailability.canInsertRow && (
             <button
               className="btn btn-sm btn-primary"
               style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 8, height: 26, padding: '0 8px' }}
@@ -1379,7 +1533,7 @@ export function ResultsTable({
                   </tr>
                 )
               })}
-              {canEdit && (
+              {(actionAvailability.canShowRowActions || addingRowId !== null) && (
                 <tr>
                   <td style={{
                     fontFamily: 'var(--font-sans)',
@@ -1558,7 +1712,7 @@ export function ResultsTable({
           x={contextMenu.x}
           y={contextMenu.y}
           selectedCount={selCount}
-          canDelete={canEdit && pkColumns.length > 0}
+          canDelete={actionAvailability.canBulkDelete}
           onDelete={() => handleDeleteSelected(filteredRows)}
           onCopy={() => copyRowsData(filteredRows)}
           onClose={() => setContextMenu(null)}

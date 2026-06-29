@@ -70,6 +70,54 @@ export interface MetricDataResult {
   data: MetricDataPoint[]
 }
 
+export interface RowMutationTargetRequest {
+  connectionId: string
+  tableName: string
+  database?: string
+  schema?: string
+  databaseType: DatabaseType
+}
+
+export interface InsertRowMutationRequest extends RowMutationTargetRequest {
+  rowData: Record<string, unknown>
+}
+
+export interface DeleteRowMutationRequest extends RowMutationTargetRequest {
+  pkColumns: ColumnInfo[]
+  rowData: Record<string, unknown>
+}
+
+export interface DuplicateRowMutationRequest extends RowMutationTargetRequest {
+  pkColumns: ColumnInfo[]
+  rowData: Record<string, unknown>
+}
+
+export interface RowMutationResult {
+  success: boolean
+  sql: string
+  error?: string
+}
+
+export type CopyTableMode = 'schema-only' | 'data-only' | 'schema-and-data'
+
+export interface CopyTableRequest {
+  connectionId: string
+  databaseType: DatabaseType
+  sourceTable: string
+  sourceDatabase?: string
+  sourceSchema?: string
+  targetTable: string
+  targetDatabase?: string
+  targetSchema?: string
+  mode: CopyTableMode
+}
+
+export interface CopyTableResult {
+  success: boolean
+  statements: string[]
+  error?: string
+}
+
 export interface DashboardWidget {
   /** react-grid-layout key — same as the widget's unique id */
   i: string
@@ -153,7 +201,7 @@ export interface UpdateStatus {
   downloadError?: string
 }
 
-const dbAPI = {
+export const dbAPI = {
   getConnections: (): Promise<ConnectionConfig[]> => ipcRenderer.invoke('db:get-connections'),
   saveConnection: (config: ConnectionConfig): Promise<{ success: boolean }> =>
     ipcRenderer.invoke('db:save-connection', config),
@@ -169,12 +217,16 @@ const dbAPI = {
     ipcRenderer.invoke('db:query', connectionId, sql, params),
   getCapabilitiesForType: (type: DatabaseType): Promise<DatabaseManagementCapabilities> =>
     ipcRenderer.invoke('db:get-capabilities-for-type', type),
-  insertRow: (tableName: string, rowData: Record<string, unknown>): Promise<boolean> =>
-    ipcRenderer.invoke('db:insert-row', tableName, rowData),
-  duplicateRow: (tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean> =>
-    ipcRenderer.invoke('db:duplicate-row', tableName, primaryKeyObject),
-  deleteRow: (tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean> =>
-    ipcRenderer.invoke('db:delete-row', tableName, primaryKeyObject),
+  insertRow: (payload: InsertRowMutationRequest): Promise<RowMutationResult> =>
+    ipcRenderer.invoke('db:insert-row', payload),
+  duplicateRow: (payload: DuplicateRowMutationRequest): Promise<RowMutationResult> =>
+    ipcRenderer.invoke('db:duplicate-row', payload),
+  deleteRow: (payload: DeleteRowMutationRequest): Promise<RowMutationResult> =>
+    ipcRenderer.invoke('db:delete-row', payload),
+  copyTablePreview: (payload: CopyTableRequest): Promise<CopyTableResult> =>
+    ipcRenderer.invoke('db:copy-table-preview', payload),
+  copyTableExecute: (payload: CopyTableRequest): Promise<CopyTableResult> =>
+    ipcRenderer.invoke('db:copy-table-execute', payload),
   getDatabases: (connectionId: string): Promise<string[]> =>
     ipcRenderer.invoke('db:get-databases', connectionId),
   getTables: (connectionId: string, database?: string): Promise<TableInfo[]> =>
@@ -276,10 +328,10 @@ const dbAPI = {
     ipcRenderer.invoke('dashboard:delete-layout', id)
 }
 
-if (process.contextIsolated) {
+if (typeof process !== 'undefined' && process.contextIsolated) {
   contextBridge.exposeInMainWorld('electron', electronAPI)
   contextBridge.exposeInMainWorld('db', dbAPI)
-} else {
+} else if (typeof window !== 'undefined') {
   // @ts-ignore (for non-sandboxed environments)
   window.electron = electronAPI
   // @ts-ignore

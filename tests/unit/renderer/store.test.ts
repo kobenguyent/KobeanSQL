@@ -23,6 +23,9 @@ function createDbMock(overrides: Partial<Record<string, unknown>> = {}): DbApi {
       supportsForeignKeys: false,
       supportsProcedures: false
     } satisfies DatabaseManagementCapabilities),
+    insertRow: vi.fn().mockResolvedValue({ success: true, sql: '' }),
+    deleteRow: vi.fn().mockResolvedValue({ success: true, sql: '' }),
+    duplicateRow: vi.fn().mockResolvedValue({ success: true, sql: '' }),
     getDatabases: vi.fn().mockResolvedValue([]),
     getTables: vi.fn().mockResolvedValue([]),
     getColumns: vi.fn().mockResolvedValue([]),

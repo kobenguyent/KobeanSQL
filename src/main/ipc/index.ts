@@ -16,6 +16,11 @@ import {
   type SqlMutationTarget
 } from '../db/mutations/sql-row-mutations'
 import {
+  buildCopyTablePreviewSql,
+  isSameCopyTableTarget,
+  type CopyTablePayload
+} from '../db/mutations/copy-table'
+import {
   exportConnectionsToPath,
   importConnectionsFromPath,
   loadConnections,
@@ -44,6 +49,17 @@ interface MutationExecutionResult {
   success: boolean
   sql: string
   error?: string
+}
+
+interface CopyTableExecutionResult {
+  success: boolean
+  statements: string[]
+  error?: string
+}
+
+interface CopyTableExecutionPlan {
+  activeType: ConnectionConfig['type']
+  statements: string[]
 }
 
 type SqlMutationChannel = 'db:insert-row' | 'db:delete-row' | 'db:duplicate-row'
@@ -109,6 +125,70 @@ function isDuplicateRowMutationPayload(value: unknown): value is SqlDuplicateRow
 
 function invalidMutationPayloadResult(channel: string): MutationExecutionResult {
   return createMutationFailure(`Invalid payload for ${channel}.`)
+}
+
+function isCopyTableMode(value: unknown): value is CopyTablePayload['mode'] {
+  return value === 'schema-only' || value === 'data-only' || value === 'schema-and-data'
+}
+
+function isCopyTablePayload(value: unknown): value is CopyTablePayload {
+  return (
+    isRecord(value) &&
+    typeof value.connectionId === 'string' &&
+    typeof value.sourceTable === 'string' &&
+    typeof value.targetTable === 'string' &&
+    typeof value.databaseType === 'string' &&
+    isCopyTableMode(value.mode)
+  )
+}
+
+function createCopyTableFailure(error: unknown, statements: string[] = []): CopyTableExecutionResult {
+  return {
+    success: false,
+    statements,
+    error: getErrorMessage(error)
+  }
+}
+
+function getCopyTableExecutionPlan(
+  manager: ConnectionManager,
+  payload: CopyTablePayload
+): CopyTableExecutionResult | CopyTableExecutionPlan {
+  try {
+    const activeType = manager.getConnectionDialect(payload.connectionId)
+
+    if (activeType !== payload.databaseType) {
+      appLogger.warn('Copy-table payload database type mismatch; using active connection dialect', {
+        connectionId: payload.connectionId,
+        hintedType: payload.databaseType,
+        activeType
+      })
+    }
+
+    if (isSameCopyTableTarget(payload)) {
+      return createCopyTableFailure('Source and target table must be different.')
+    }
+
+    const capabilities = manager.getCapabilitiesForType(activeType)
+    if (!capabilities.canCopyTable) {
+      return createCopyTableFailure(`Copy table is not supported for ${activeType}.`)
+    }
+
+    const statements = buildCopyTablePreviewSql({
+      ...payload,
+      databaseType: activeType
+    })
+    if (!statements || statements.length === 0) {
+      return createCopyTableFailure(`Copy table preview is not available for ${activeType}.`)
+    }
+
+    return {
+      activeType,
+      statements
+    }
+  } catch (error) {
+    return createCopyTableFailure(error)
+  }
 }
 
 export function registerIpcHandlers(manager: ConnectionManager, updateService?: UpdateService): void {
@@ -356,6 +436,67 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
       (target) => buildDuplicateSql(target, payloadOrTableName.rowData, payloadOrTableName.pkColumns),
       DUPLICATE_ROW_SQL_ERROR
     )
+  })
+
+  handleWithLogging('db:copy-table-preview', async (_event: IpcMainInvokeEvent, payload: unknown) => {
+    if (!isCopyTablePayload(payload)) {
+      return createCopyTableFailure('Invalid payload for db:copy-table-preview.')
+    }
+
+    const executionPlan = getCopyTableExecutionPlan(manager, payload)
+    if ('success' in executionPlan) {
+      return executionPlan
+    }
+
+    return { success: true, statements: executionPlan.statements }
+  })
+
+  handleWithLogging('db:copy-table-execute', async (_event: IpcMainInvokeEvent, payload: unknown) => {
+    if (!isCopyTablePayload(payload)) {
+      return createCopyTableFailure('Invalid payload for db:copy-table-execute.')
+    }
+
+    const executionPlan = getCopyTableExecutionPlan(manager, payload)
+    if ('success' in executionPlan) {
+      return executionPlan
+    }
+
+    const { activeType, statements } = executionPlan
+    const shouldUseTransaction = activeType === 'postgres' && statements.length > 1
+
+    try {
+      if (shouldUseTransaction) {
+        const beginResult = await manager.query(payload.connectionId, 'BEGIN')
+        if (beginResult.error) {
+          return createCopyTableFailure(beginResult.error, statements)
+        }
+      }
+
+      for (const statement of statements) {
+        const result = await manager.query(payload.connectionId, statement)
+        if (result.error) {
+          if (shouldUseTransaction) {
+            await manager.query(payload.connectionId, 'ROLLBACK').catch(() => undefined)
+          }
+          return createCopyTableFailure(result.error, statements)
+        }
+      }
+
+      if (shouldUseTransaction) {
+        const commitResult = await manager.query(payload.connectionId, 'COMMIT')
+        if (commitResult.error) {
+          await manager.query(payload.connectionId, 'ROLLBACK').catch(() => undefined)
+          return createCopyTableFailure(commitResult.error, statements)
+        }
+      }
+
+      return { success: true, statements }
+    } catch (error) {
+      if (shouldUseTransaction) {
+        await manager.query(payload.connectionId, 'ROLLBACK').catch(() => undefined)
+      }
+      return createCopyTableFailure(error, statements)
+    }
   })
 
   // Get databases list

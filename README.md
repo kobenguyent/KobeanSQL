@@ -52,6 +52,7 @@
 
 ### Data Visualization & Results
 - **Sortable, filterable results grid** — powered by `@tanstack/react-table` with global full-text filter and column-level sort
+- **Capability-aware row actions** — insert, delete, duplicate, and inline edit only appear when the active engine explicitly supports them
 - **Inline cell editing (PK-aware)** — edit table cells with generated `UPDATE` SQL and a confirmation modal before execution
 - **MongoDB edit/write workflow** — run `find` / `aggregate` plus write operations (`insertOne`, `updateOne`, `deleteMany`, `findOneAndUpdate`, `runCommand`, etc.) and inline MongoDB row edits/deletes from the results view
 - **Metric Dashboard** — build persistent drag-and-drop dashboards with stat, line, bar, and pie widgets powered by live SQL result sets
@@ -61,6 +62,7 @@
 
 ### Schema Browser
 - **Expandable sidebar tree** — Connections → Databases → Tables/Views → Columns with data type and primary-key flags
+- **Copy Table (Postgres v1)** — preview-first same-connection table copy for PostgreSQL with `schema only` or `schema + data` execution modes
 - **Stored procedures / functions** — browse and call routines from the sidebar
 - **Resizable layout** — drag the sidebar and results-panel dividers to fit your workflow
 
@@ -387,7 +389,7 @@ The **Query Editor** is a full CodeMirror 6 instance with:
 
 **Running queries:**
 - Press `Ctrl/⌘+Enter` to execute the entire editor content, or select a portion of SQL and press `Ctrl/⌘+Enter` to execute only the selection.
-- Results appear in the panel below the editor with sortable columns, a global text filter, row count, and execution duration.
+- Results appear in the panel below the editor with sortable columns, a global text filter, capability-aware row actions, row count, and execution duration.
 
 **Multi-tab workflow:**
 - Press `Ctrl/⌘+T` to open a new query tab. Each tab maintains independent editor state and result set.

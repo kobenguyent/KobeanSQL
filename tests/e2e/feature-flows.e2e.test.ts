@@ -156,6 +156,32 @@ describe('E2E feature flows', () => {
     expect(history[199].id).toBe('h-5')
   })
 
+  it('keeps copy-table disabled when an engine reports no copy capability', async () => {
+    const db = createDbMock({
+      getCapabilitiesForType: vi.fn().mockResolvedValue({
+        canInsertRow: false,
+        canDeleteRow: false,
+        canDuplicateRow: false,
+        canInlineUpdateRow: false,
+        canCopyTable: false,
+        canManageSchema: false,
+        supportsForeignKeys: false,
+        supportsProcedures: false
+      } satisfies DatabaseManagementCapabilities)
+    })
+    const useAppStore = await loadStoreWithDb(db)
+    const config: ConnectionConfig = { id: 'redis-1', name: 'Redis', type: 'redis', host: 'localhost' }
+
+    useAppStore.setState({
+      connections: [config],
+      connectedIds: new Set([config.id])
+    })
+
+    await useAppStore.getState().loadConnectionCapabilities(config.id, config.type)
+
+    expect(useAppStore.getState().connectionCapabilities[config.id].canCopyTable).toBe(false)
+  })
+
   it('sanitizes malformed persisted history entries on load', async () => {
     const db = createDbMock({
       getPersistedHistory: vi.fn().mockResolvedValue([

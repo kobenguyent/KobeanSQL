@@ -157,6 +157,8 @@
 ### Features
 
 * add MongoDB write support (insert, update, delete, replace, findOneAnd* and runCommand), plus inline edit/delete query generation in results table
+* add capability-aware SQL row actions backed by real main-process mutation execution
+* add preview-first PostgreSQL copy-table v1 for same-connection schema or schema-plus-data copies
 
 ### Bug Fixes
 

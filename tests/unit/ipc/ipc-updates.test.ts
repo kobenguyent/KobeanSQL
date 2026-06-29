@@ -662,3 +662,157 @@ describe('IPC capability channels', () => {
     })
   })
 })
+
+describe('IPC copy-table channels', () => {
+  beforeEach(() => {
+    handleMock.mockReset()
+  })
+
+  it('previews and executes same-connection copy-table statements for supported SQL engines', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const queryMock = vi
+      .fn()
+      .mockResolvedValue({ columns: [], rows: [], rowCount: 0, duration: 1 })
+    const manager = getManagerStub({
+      query: queryMock,
+      getConnectionDialect: vi.fn(() => 'postgres'),
+      getCapabilitiesForType: vi.fn(() => ({
+        canInsertRow: true,
+        canDeleteRow: true,
+        canDuplicateRow: true,
+        canInlineUpdateRow: true,
+        canCopyTable: true,
+        canManageSchema: true,
+        supportsForeignKeys: true,
+        supportsProcedures: true
+      }))
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+    const payload = {
+      connectionId: 'pg-1',
+      databaseType: 'postgres' as const,
+      sourceTable: 'users',
+      sourceSchema: 'public',
+      targetTable: 'users_backup',
+      targetSchema: 'public',
+      mode: 'schema-and-data' as const
+    }
+
+    expect(handlers['db:copy-table-preview']).toBeTypeOf('function')
+    expect(handlers['db:copy-table-execute']).toBeTypeOf('function')
+
+    await expect(handlers['db:copy-table-preview'](getTrustedEvent(), payload)).resolves.toEqual({
+      success: true,
+      statements: [
+        'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);',
+        'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+      ]
+    })
+
+    await expect(handlers['db:copy-table-execute'](getTrustedEvent(), payload)).resolves.toEqual({
+      success: true,
+      statements: [
+        'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);',
+        'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+      ]
+    })
+
+    expect(queryMock).toHaveBeenNthCalledWith(
+      1,
+      'pg-1',
+      'BEGIN'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      2,
+      'pg-1',
+      'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      3,
+      'pg-1',
+      'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(4, 'pg-1', 'COMMIT')
+  })
+
+  it('rolls back schema-and-data execution when a later copy statement fails', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const queryMock = vi
+      .fn()
+      .mockResolvedValueOnce({ columns: [], rows: [], rowCount: 0, duration: 1 })
+      .mockResolvedValueOnce({ columns: [], rows: [], rowCount: 0, duration: 1 })
+      .mockResolvedValueOnce({ columns: [], rows: [], rowCount: 0, duration: 1, error: 'permission denied' })
+      .mockResolvedValueOnce({ columns: [], rows: [], rowCount: 0, duration: 1 })
+    const manager = getManagerStub({
+      query: queryMock,
+      getConnectionDialect: vi.fn(() => 'postgres'),
+      getCapabilitiesForType: vi.fn(() => ({
+        canInsertRow: true,
+        canDeleteRow: true,
+        canDuplicateRow: true,
+        canInlineUpdateRow: true,
+        canCopyTable: true,
+        canManageSchema: true,
+        supportsForeignKeys: true,
+        supportsProcedures: true
+      }))
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+    const payload = {
+      connectionId: 'pg-1',
+      databaseType: 'postgres' as const,
+      sourceTable: 'users',
+      sourceSchema: 'public',
+      targetTable: 'users_backup',
+      targetSchema: 'public',
+      mode: 'schema-and-data' as const
+    }
+
+    await expect(handlers['db:copy-table-execute'](getTrustedEvent(), payload)).resolves.toEqual({
+      success: false,
+      statements: [
+        'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);',
+        'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+      ],
+      error: 'permission denied'
+    })
+
+    expect(queryMock).toHaveBeenNthCalledWith(1, 'pg-1', 'BEGIN')
+    expect(queryMock).toHaveBeenNthCalledWith(
+      2,
+      'pg-1',
+      'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      3,
+      'pg-1',
+      'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(4, 'pg-1', 'ROLLBACK')
+  })
+
+  it('rejects copy-table requests that reuse the source table as the target', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub({
+      getConnectionDialect: vi.fn(() => 'postgres')
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(handlers['db:copy-table-preview'](getTrustedEvent(), {
+      connectionId: 'pg-1',
+      databaseType: 'postgres',
+      sourceTable: 'users',
+      sourceSchema: 'public',
+      targetTable: 'users',
+      targetSchema: 'public',
+      mode: 'schema-only'
+    })).resolves.toEqual({
+      success: false,
+      statements: [],
+      error: 'Source and target table must be different.'
+    })
+  })
+})
