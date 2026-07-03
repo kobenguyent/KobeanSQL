@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react'
 import {
   Plus,
+  Copy,
   ChevronRight,
   ChevronDown,
   Database,
@@ -24,6 +25,7 @@ import { useAppStore } from '../../store'
 import { useTranslation } from '../../hooks/useTranslation'
 import type { ConnectionConfig, SavedQuery } from '../../types'
 import { DB_COLORS } from '../../types'
+import { CopyTableModal } from '../CopyTableModal'
 
 interface Props {
   onNewConnection: () => void
@@ -37,6 +39,15 @@ interface TreeState {
   expandedSections: Record<string, Set<string>> // key: `connId/dbName`, value: Set of section names
   selectedTable: string | null
   dbSearch: Record<string, string> // key: `connId/dbName`, value: search text
+}
+
+interface CopyTableState {
+  connectionId: string
+  connectionName: string
+  databaseType: ConnectionConfig['type']
+  sourceTable: string
+  sourceDatabase?: string
+  sourceSchema?: string
 }
 
 const UNGROUPED_CATEGORY_KEY = ''
@@ -77,6 +88,7 @@ export function Sidebar({ onNewConnection, onEditConnection }: Props): React.JSX
     connections,
     connectedIds,
     schema,
+    connectionCapabilities,
     savedQueries,
     connect,
     disconnect,
@@ -104,6 +116,7 @@ export function Sidebar({ onNewConnection, onEditConnection }: Props): React.JSX
   const [expandedQueryCategories, setExpandedQueryCategories] = useState<Set<string>>(new Set([UNGROUPED_CATEGORY_KEY]))
   const [expandedConnCategories, setExpandedConnCategories] = useState<Set<string>>(new Set([UNGROUPED_CATEGORY_KEY]))
   const isRenameSubmittingRef = useRef(false)
+  const [copyTableState, setCopyTableState] = useState<CopyTableState | null>(null)
 
   const [tree, setTree] = useState<TreeState>({
     expandedConnections: new Set(),
@@ -229,6 +242,13 @@ export function Sidebar({ onNewConnection, onEditConnection }: Props): React.JSX
     e.preventDefault()
     e.stopPropagation()
   }
+
+  const handleCopyTableSuccess = useCallback(async (targetTable: string) => {
+    if (copyTableState?.sourceDatabase) {
+      await loadTables(copyTableState.connectionId, copyTableState.sourceDatabase)
+    }
+    setStatus(`Copied table to ${targetTable} successfully.`, 'success')
+  }, [copyTableState, loadTables, setStatus])
 
   const applyTemplate = useCallback((sql: string) => {
     const state = useAppStore.getState()
@@ -580,6 +600,7 @@ export function Sidebar({ onNewConnection, onEditConnection }: Props): React.JSX
                                         const tableKey = `${conn.id}/${dbName}/${qualifiedTableName}`
                                         const tblExpanded = (tree.expandedTables[conn.id] ?? new Set()).has(tableKey)
                                         const columns = connSchema.columns[`${dbName}.${qualifiedTableName}`] ?? []
+                                        const canCopyTable = conn.type === 'postgres' && !!connectionCapabilities[conn.id]?.canCopyTable
 
                                         return (
                                           <div key={tableKey}>
@@ -620,6 +641,26 @@ export function Sidebar({ onNewConnection, onEditConnection }: Props): React.JSX
                                                   </span>
                                                 )}
                                               </span>
+                                              {canCopyTable && (
+                                                <button
+                                                  className="icon-btn"
+                                                  style={{ width: 20, height: 20, flexShrink: 0 }}
+                                                  title="Copy table"
+                                                  onClick={(event) => {
+                                                    event.stopPropagation()
+                                                    setCopyTableState({
+                                                      connectionId: conn.id,
+                                                      connectionName: conn.name,
+                                                      databaseType: conn.type,
+                                                      sourceTable: tbl.name,
+                                                      sourceDatabase: dbName,
+                                                      sourceSchema: tbl.schema
+                                                    })
+                                                  }}
+                                                >
+                                                  <Copy size={10} />
+                                                </button>
+                                              )}
                                             </div>
 
                                             {/* Columns */}
@@ -1000,6 +1041,21 @@ export function Sidebar({ onNewConnection, onEditConnection }: Props): React.JSX
           )}
         </div>
       </div>
+
+      {copyTableState && (
+        <CopyTableModal
+          connectionId={copyTableState.connectionId}
+          connectionName={copyTableState.connectionName}
+          databaseType={copyTableState.databaseType}
+          sourceTable={copyTableState.sourceTable}
+          sourceDatabase={copyTableState.sourceDatabase}
+          sourceSchema={copyTableState.sourceSchema}
+          onClose={() => setCopyTableState(null)}
+          onCopied={(targetTable) => {
+            void handleCopyTableSuccess(targetTable)
+          }}
+        />
+      )}
     </div>
   )
 }

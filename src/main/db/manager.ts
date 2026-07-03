@@ -13,6 +13,7 @@ import { RedisAdapter } from './adapters/redis'
 import { ElasticsearchAdapter } from './adapters/elasticsearch'
 import { OracleAdapter } from './adapters/oracle'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from './types'
+import { getCapabilitiesForType as resolveCapabilitiesForType, type DatabaseManagementCapabilities } from './capabilities'
 import { appLogger } from '../logger'
 
 const DEFAULT_CONNECTION_TIMEOUT = 15000 // 15 seconds
@@ -260,6 +261,16 @@ export class ConnectionManager extends EventEmitter {
 
   getActiveConnections(): { id: string; adapter: DatabaseAdapter }[] {
     return Array.from(this.connections.entries()).map(([id, adapter]) => ({ id, adapter }))
+  }
+
+  getCapabilitiesForType(type: ConnectionConfig['type']): DatabaseManagementCapabilities {
+    return resolveCapabilitiesForType(type)
+  }
+
+  getConnectionDialect(connectionId: string): ConnectionConfig['type'] {
+    const adapter = this.connections.get(connectionId)
+    if (!adapter) throw new Error(`Not connected: ${connectionId}`)
+    return adapter.dialect
   }
 
   async testConnection(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: ConnectionConfig['type'] }> {

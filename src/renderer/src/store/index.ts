@@ -1,5 +1,13 @@
 import { create } from 'zustand'
 import type {
+  CopyTableRequest,
+  CopyTableResult,
+  DeleteRowMutationRequest,
+  DuplicateRowMutationRequest,
+  InsertRowMutationRequest,
+  RowMutationResult
+} from '../../../preload'
+import type {
   ConnectionConfig,
   QueryTab,
   QueryResult,
@@ -7,6 +15,7 @@ import type {
   ColumnInfo,
   ProcedureInfo,
   DatabaseType,
+  DatabaseManagementCapabilities,
   SavedQuery,
   QueryHistoryEntry,
   AppSettings,
@@ -19,6 +28,12 @@ import { setLocale } from '../i18n'
 
 const THEME_STORAGE_KEY = 'kobeansql-theme'
 const UPDATE_DOWNLOAD_POLL_MS = 250
+const connectionCapabilityRequestTokens = new Map<string, number>()
+let nextConnectionCapabilityRequestToken = 1
+
+function invalidateConnectionCapabilityRequest(connectionId: string): void {
+  connectionCapabilityRequestTokens.delete(connectionId)
+}
 
 function loadPersistedTheme(): 'dark' | 'light' | 'system' | 'matrix' | 'cyberpunk' {
   try {
@@ -65,9 +80,12 @@ declare global {
       disconnect(id: string): Promise<{ success: boolean }>
       isConnected(id: string): Promise<boolean>
       query(connectionId: string, sql: string, params?: unknown[]): Promise<QueryResult>
-      deleteRow(tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean>
-      insertRow(tableName: string, rowData: Record<string, unknown>): Promise<boolean>
-      duplicateRow(tableName: string, primaryKeyObject: Record<string, unknown>): Promise<boolean>
+      getCapabilitiesForType(type: DatabaseType): Promise<DatabaseManagementCapabilities>
+      deleteRow(payload: DeleteRowMutationRequest): Promise<RowMutationResult>
+      insertRow(payload: InsertRowMutationRequest): Promise<RowMutationResult>
+      duplicateRow(payload: DuplicateRowMutationRequest): Promise<RowMutationResult>
+      copyTablePreview(payload: CopyTableRequest): Promise<CopyTableResult>
+      copyTableExecute(payload: CopyTableRequest): Promise<CopyTableResult>
       getDatabases(connectionId: string): Promise<string[]>
       getTables(connectionId: string, database?: string): Promise<TableInfo[]>
       getColumns(connectionId: string, table: string, database?: string): Promise<ColumnInfo[]>
@@ -201,6 +219,7 @@ interface AppState {
   connectedIds: Set<string>
   schema: Record<string, SchemaNode>
   connectionVersions: Record<string, string>
+  connectionCapabilities: Record<string, DatabaseManagementCapabilities>
 
   // Tabs
   tabs: QueryTab[]
@@ -230,6 +249,7 @@ interface AppState {
   connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string }>
   disconnect(id: string): Promise<void>
   handleConnectionLost(id: string): void
+  loadConnectionCapabilities(connectionId: string, type: DatabaseType): Promise<void>
   loadDatabases(connectionId: string): Promise<void>
   loadTables(connectionId: string, database: string): Promise<void>
   loadColumns(connectionId: string, table: string, database?: string): Promise<void>
@@ -289,6 +309,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   connectedIds: new Set(),
   schema: {},
   connectionVersions: {},
+  connectionCapabilities: {},
   tabs: [],
   activeTabId: null,
   savedQueries: [],
@@ -316,12 +337,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteConnection: async (id) => {
     await window.db.deleteConnection(id)
-    const { connectedIds, schema } = get()
+    invalidateConnectionCapabilityRequest(id)
+    const { connectedIds, schema, connectionCapabilities } = get()
     const nextIds = new Set(connectedIds)
     nextIds.delete(id)
     const nextSchema = { ...schema }
+    const nextCapabilities = { ...connectionCapabilities }
     delete nextSchema[id]
-    set({ connectedIds: nextIds, schema: nextSchema })
+    delete nextCapabilities[id]
+    set({ connectedIds: nextIds, schema: nextSchema, connectionCapabilities: nextCapabilities })
     await get().loadConnections()
   },
 
@@ -343,6 +367,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ connectedIds: nextIds, connections: nextConnections, schema: nextSchema })
       
       const finalType = result.detectedType || config.type
+      await get().loadConnectionCapabilities(config.id, finalType)
       const typeLabel = finalType === 'mariadb' ? 'MariaDB' : finalType.charAt(0).toUpperCase() + finalType.slice(1)
       get().setStatus(`Connected to ${config.name} (${typeLabel})`, 'success')
       
@@ -362,27 +387,63 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   disconnect: async (id) => {
     await window.db.disconnect(id)
-    const { connectedIds, schema, connectionVersions, connections } = get()
+    invalidateConnectionCapabilityRequest(id)
+    const { connectedIds, schema, connectionVersions, connectionCapabilities, connections } = get()
     const nextIds = new Set(connectedIds)
     nextIds.delete(id)
     const nextSchema = { ...schema }; delete nextSchema[id]
     const nextVersions = { ...connectionVersions }; delete nextVersions[id]
-    set({ connectedIds: nextIds, schema: nextSchema, connectionVersions: nextVersions })
+    const nextCapabilities = { ...connectionCapabilities }; delete nextCapabilities[id]
+    set({ connectedIds: nextIds, schema: nextSchema, connectionVersions: nextVersions, connectionCapabilities: nextCapabilities })
     const conn = connections.find(c => c.id === id)
     get().setStatus(`Disconnected from ${conn?.name}`, 'info')
     void window.db.addConnectionLog({ id: genId(), connectionId: id, connectionName: conn?.name ?? id, event: 'disconnected', timestamp: Date.now() }).catch(() => {})
   },
 
   handleConnectionLost: (id) => {
-    const { connectedIds, schema, connectionVersions, connections } = get()
+    invalidateConnectionCapabilityRequest(id)
+    const { connectedIds, schema, connectionVersions, connectionCapabilities, connections } = get()
     const nextIds = new Set(connectedIds)
     nextIds.delete(id)
     const nextSchema = { ...schema }; delete nextSchema[id]
     const nextVersions = { ...connectionVersions }; delete nextVersions[id]
-    set({ connectedIds: nextIds, schema: nextSchema, connectionVersions: nextVersions })
+    const nextCapabilities = { ...connectionCapabilities }; delete nextCapabilities[id]
+    set({ connectedIds: nextIds, schema: nextSchema, connectionVersions: nextVersions, connectionCapabilities: nextCapabilities })
     const conn = connections.find(c => c.id === id)
     get().setStatus(`Connection to ${conn?.name ?? id} was lost`, 'error')
     void window.db.addConnectionLog({ id: genId(), connectionId: id, connectionName: conn?.name ?? id, event: 'disconnected', timestamp: Date.now(), error: 'Connection lost' }).catch(() => {})
+  },
+
+  loadConnectionCapabilities: async (connectionId, type) => {
+    const requestToken = nextConnectionCapabilityRequestToken++
+    connectionCapabilityRequestTokens.set(connectionId, requestToken)
+
+    try {
+      const capabilities = await window.db.getCapabilitiesForType(type)
+      if (connectionCapabilityRequestTokens.get(connectionId) !== requestToken) return
+      if (!get().connectedIds.has(connectionId)) {
+        invalidateConnectionCapabilityRequest(connectionId)
+        return
+      }
+
+      invalidateConnectionCapabilityRequest(connectionId)
+      set((s) => ({
+        connectionCapabilities: {
+          ...s.connectionCapabilities,
+          [connectionId]: capabilities
+        }
+      }))
+    } catch {
+      if (connectionCapabilityRequestTokens.get(connectionId) !== requestToken) return
+
+      invalidateConnectionCapabilityRequest(connectionId)
+      set((s) => {
+        if (!(connectionId in s.connectionCapabilities)) return {}
+        const nextCapabilities = { ...s.connectionCapabilities }
+        delete nextCapabilities[connectionId]
+        return { connectionCapabilities: nextCapabilities }
+      })
+    }
   },
 
   loadDatabases: async (connectionId) => {

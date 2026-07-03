@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildProcedureCallSql, buildSelectTableSql, quoteIdentifier } from '../../../src/renderer/src/sql/dsl'
+import { buildCopyTablePreviewSql } from '../../../src/main/db/mutations/copy-table'
 
 describe('KobeanSQL DSL', () => {
   it('builds dialect-aware SELECT table SQL', () => {
@@ -25,5 +26,22 @@ describe('KobeanSQL DSL', () => {
     expect(quoteIdentifier('na]me', 'mssql')).toBe('[na]]me]')
     expect(quoteIdentifier('na`me', 'mysql')).toBe('`na``me`')
     expect(quoteIdentifier('na"me', 'postgres')).toBe('"na""me"')
+  })
+
+  it('builds postgres schema-and-data copy preview SQL', () => {
+    expect(
+      buildCopyTablePreviewSql({
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        sourceTable: 'users',
+        sourceSchema: 'public',
+        targetTable: 'users_backup',
+        targetSchema: 'public',
+        mode: 'schema-and-data'
+      })
+    ).toEqual([
+      'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);',
+      'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+    ])
   })
 })

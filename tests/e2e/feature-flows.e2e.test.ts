@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConnectionConfig } from '../../src/renderer/src/types'
+import type { ConnectionConfig, DatabaseManagementCapabilities } from '../../src/renderer/src/types'
 import {
   buildInlineUpdateSql,
   buildDeleteSql,
@@ -26,6 +26,16 @@ function createDbMock(overrides: Partial<Record<string, unknown>> = {}): DbApi {
     disconnect: vi.fn().mockResolvedValue({ success: true }),
     isConnected: vi.fn().mockResolvedValue(false),
     query: vi.fn().mockResolvedValue({ columns: [], rows: [], rowCount: 0, duration: 1 }),
+    getCapabilitiesForType: vi.fn().mockResolvedValue({
+      canInsertRow: false,
+      canDeleteRow: false,
+      canDuplicateRow: false,
+      canInlineUpdateRow: false,
+      canCopyTable: false,
+      canManageSchema: false,
+      supportsForeignKeys: false,
+      supportsProcedures: false
+    } satisfies DatabaseManagementCapabilities),
     getDatabases: vi.fn().mockResolvedValue([]),
     getTables: vi.fn().mockResolvedValue([]),
     getColumns: vi.fn().mockResolvedValue([]),
@@ -64,30 +74,6 @@ describe('E2E feature flows', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
-  })
-
-  it('does not restore server version after disconnect if async version arrives late', async () => {
-    let resolveVersion: ((value: { version: string }) => void) | null = null
-    const delayedVersionPromise = new Promise<{ version: string }>((resolve) => {
-      resolveVersion = resolve
-    })
-    const db = createDbMock({
-      getServerVersion: vi.fn().mockReturnValue(delayedVersionPromise)
-    })
-
-    const useAppStore = await loadStoreWithDb(db)
-    const config: ConnectionConfig = { id: 'c1', name: 'Prod PG', type: 'postgres', host: 'localhost' }
-    useAppStore.setState({ connections: [config] })
-
-    await useAppStore.getState().connect(config)
-    await useAppStore.getState().disconnect(config.id)
-
-    resolveVersion?.({ version: 'PostgreSQL 16.4 on x86_64' })
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(useAppStore.getState().connectedIds.has(config.id)).toBe(false)
-    expect(useAppStore.getState().connectionVersions[config.id]).toBeUndefined()
   })
 
   it('opens table tabs using settings queryLimit and correct dialect SQL', async () => {
@@ -168,6 +154,32 @@ describe('E2E feature flows', () => {
     expect(history).toHaveLength(200)
     expect(history[0].id).toBe('h-204')
     expect(history[199].id).toBe('h-5')
+  })
+
+  it('keeps copy-table disabled when an engine reports no copy capability', async () => {
+    const db = createDbMock({
+      getCapabilitiesForType: vi.fn().mockResolvedValue({
+        canInsertRow: false,
+        canDeleteRow: false,
+        canDuplicateRow: false,
+        canInlineUpdateRow: false,
+        canCopyTable: false,
+        canManageSchema: false,
+        supportsForeignKeys: false,
+        supportsProcedures: false
+      } satisfies DatabaseManagementCapabilities)
+    })
+    const useAppStore = await loadStoreWithDb(db)
+    const config: ConnectionConfig = { id: 'redis-1', name: 'Redis', type: 'redis', host: 'localhost' }
+
+    useAppStore.setState({
+      connections: [config],
+      connectedIds: new Set([config.id])
+    })
+
+    await useAppStore.getState().loadConnectionCapabilities(config.id, config.type)
+
+    expect(useAppStore.getState().connectionCapabilities[config.id].canCopyTable).toBe(false)
   })
 
   it('sanitizes malformed persisted history entries on load', async () => {

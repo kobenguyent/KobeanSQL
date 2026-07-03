@@ -1,7 +1,7 @@
-import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from './types'
+import { DatabaseType, ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from './types'
 
 export interface DatabaseAdapter {
-  dialect: ConnectionConfig['type']
+  dialect: DatabaseType
   connect(config: ConnectionConfig): Promise<void>
   disconnect(): Promise<void>
   isConnected(): boolean

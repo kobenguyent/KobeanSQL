@@ -2,6 +2,25 @@ import { BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, shell } from 'elect
 import path from 'path'
 import { ConnectionManager } from '../db/manager'
 import {
+  buildDeleteSql,
+  buildDuplicateSql,
+  buildInsertSql,
+  DELETE_ROW_SQL_ERROR,
+  DUPLICATE_ROW_SQL_ERROR,
+  INSERT_ROW_SQL_ERROR,
+  supportsSqlMutationCapability,
+  type SqlDeleteRowMutationPayload,
+  type SqlDuplicateRowMutationPayload,
+  type SqlInsertRowMutationPayload,
+  type SqlMutationCapability,
+  type SqlMutationTarget
+} from '../db/mutations/sql-row-mutations'
+import {
+  buildCopyTablePreviewSql,
+  isSameCopyTableTarget,
+  type CopyTablePayload
+} from '../db/mutations/copy-table'
+import {
   exportConnectionsToPath,
   importConnectionsFromPath,
   loadConnections,
@@ -23,6 +42,152 @@ import { localStore, type ConnectionLogEntry, type PersistedQueryHistoryEntry, t
 class UntrustedRendererContextError extends Error {
   constructor() {
     super('Untrusted renderer context')
+  }
+}
+
+interface MutationExecutionResult {
+  success: boolean
+  sql: string
+  error?: string
+}
+
+interface CopyTableExecutionResult {
+  success: boolean
+  statements: string[]
+  error?: string
+}
+
+interface CopyTableExecutionPlan {
+  activeType: ConnectionConfig['type']
+  statements: string[]
+}
+
+type SqlMutationChannel = 'db:insert-row' | 'db:delete-row' | 'db:duplicate-row'
+
+interface SqlMutationRequirement {
+  capability: SqlMutationCapability
+  unsupportedError: (databaseType: ConnectionConfig['type']) => string
+}
+
+const SQL_MUTATION_REQUIREMENTS: Record<SqlMutationChannel, SqlMutationRequirement> = {
+  'db:insert-row': {
+    capability: 'canInsertRow',
+    unsupportedError: (databaseType) => `Insert row mutations are not supported for ${databaseType}.`
+  },
+  'db:delete-row': {
+    capability: 'canDeleteRow',
+    unsupportedError: (databaseType) => `Delete row mutations are not supported for ${databaseType}.`
+  },
+  'db:duplicate-row': {
+    capability: 'canDuplicateRow',
+    unsupportedError: (databaseType) => `Duplicate row mutations are not supported for ${databaseType}.`
+  }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error || 'Unknown error'
+  if (error instanceof Error) return error.message || 'Unknown error'
+  return 'Unknown error'
+}
+
+function createMutationFailure(error: unknown, sql = ''): MutationExecutionResult {
+  return {
+    success: false,
+    sql,
+    error: getErrorMessage(error)
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isInsertRowMutationPayload(value: unknown): value is SqlInsertRowMutationPayload {
+  return (
+    isRecord(value) &&
+    typeof value.connectionId === 'string' &&
+    typeof value.tableName === 'string' &&
+    typeof value.databaseType === 'string' &&
+    isRecord(value.rowData)
+  )
+}
+
+function isDeleteRowMutationPayload(value: unknown): value is SqlDeleteRowMutationPayload {
+  return (
+    isInsertRowMutationPayload(value) &&
+    Array.isArray(value.pkColumns)
+  )
+}
+
+function isDuplicateRowMutationPayload(value: unknown): value is SqlDuplicateRowMutationPayload {
+  return isDeleteRowMutationPayload(value)
+}
+
+function invalidMutationPayloadResult(channel: string): MutationExecutionResult {
+  return createMutationFailure(`Invalid payload for ${channel}.`)
+}
+
+function isCopyTableMode(value: unknown): value is CopyTablePayload['mode'] {
+  return value === 'schema-only' || value === 'data-only' || value === 'schema-and-data'
+}
+
+function isCopyTablePayload(value: unknown): value is CopyTablePayload {
+  return (
+    isRecord(value) &&
+    typeof value.connectionId === 'string' &&
+    typeof value.sourceTable === 'string' &&
+    typeof value.targetTable === 'string' &&
+    typeof value.databaseType === 'string' &&
+    isCopyTableMode(value.mode)
+  )
+}
+
+function createCopyTableFailure(error: unknown, statements: string[] = []): CopyTableExecutionResult {
+  return {
+    success: false,
+    statements,
+    error: getErrorMessage(error)
+  }
+}
+
+function getCopyTableExecutionPlan(
+  manager: ConnectionManager,
+  payload: CopyTablePayload
+): CopyTableExecutionResult | CopyTableExecutionPlan {
+  try {
+    const activeType = manager.getConnectionDialect(payload.connectionId)
+
+    if (activeType !== payload.databaseType) {
+      appLogger.warn('Copy-table payload database type mismatch; using active connection dialect', {
+        connectionId: payload.connectionId,
+        hintedType: payload.databaseType,
+        activeType
+      })
+    }
+
+    if (isSameCopyTableTarget(payload)) {
+      return createCopyTableFailure('Source and target table must be different.')
+    }
+
+    const capabilities = manager.getCapabilitiesForType(activeType)
+    if (!capabilities.canCopyTable) {
+      return createCopyTableFailure(`Copy table is not supported for ${activeType}.`)
+    }
+
+    const statements = buildCopyTablePreviewSql({
+      ...payload,
+      databaseType: activeType
+    })
+    if (!statements || statements.length === 0) {
+      return createCopyTableFailure(`Copy table preview is not available for ${activeType}.`)
+    }
+
+    return {
+      activeType,
+      statements
+    }
+  } catch (error) {
+    return createCopyTableFailure(error)
   }
 }
 
@@ -80,6 +245,71 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     })
   }
 
+  const getSqlMutationTarget = (
+    channel: SqlMutationChannel,
+    connectionId: string,
+    hintedType: ConnectionConfig['type'],
+    payloadTarget: Omit<SqlMutationTarget, 'databaseType'>
+  ): SqlMutationTarget | MutationExecutionResult => {
+    const activeType = manager.getConnectionDialect(connectionId)
+
+    if (activeType !== hintedType) {
+      appLogger.warn('Row mutation payload database type mismatch; using active connection dialect', {
+        channel,
+        connectionId,
+        hintedType,
+        activeType
+      })
+    }
+
+    const { capability, unsupportedError } = SQL_MUTATION_REQUIREMENTS[channel]
+    const capabilities = manager.getCapabilitiesForType(activeType)
+    if (!supportsSqlMutationCapability(capabilities, capability)) {
+      return createMutationFailure(unsupportedError(activeType))
+    }
+
+    return {
+      ...payloadTarget,
+      databaseType: activeType
+    }
+  }
+
+  const executeSqlMutation = async (
+    channel: SqlMutationChannel,
+    connectionId: string,
+    hintedType: ConnectionConfig['type'],
+    payloadTarget: Omit<SqlMutationTarget, 'databaseType'>,
+    buildSql: (target: SqlMutationTarget) => string | null,
+    invalidSqlError: string
+  ): Promise<MutationExecutionResult> => {
+    let sql = ''
+    try {
+      const resolvedTarget = getSqlMutationTarget(channel, connectionId, hintedType, payloadTarget)
+      if ('success' in resolvedTarget) {
+        return resolvedTarget
+      }
+
+      const builtSql = buildSql(resolvedTarget)
+      if (!builtSql) {
+        return createMutationFailure(invalidSqlError)
+      }
+
+      sql = builtSql
+      const result = await manager.query(connectionId, sql)
+      return { success: !result.error, sql, error: result.error }
+    } catch (error) {
+      return createMutationFailure(error, sql)
+    }
+  }
+
+  const handleLegacyRowMutationFallback = (channel: string, tableName: string): boolean => {
+    appLogger.warn('Legacy row mutation IPC signature invoked; returning compatibility success until payload callers land', {
+      channel,
+      tableName
+    })
+    return true
+  }
+
   // List saved connections
   handleWithLogging('db:get-connections', async (_event: IpcMainInvokeEvent) => {
     return loadConnections()
@@ -135,32 +365,139 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     }
   )
 
-  // Mock delete row
   handleWithLogging(
-    'db:delete-row',
-    async (_event: IpcMainInvokeEvent, _tableName: string, _primaryKeyObject: Record<string, unknown>) => {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      return true
+    'db:get-capabilities-for-type',
+    async (_event: IpcMainInvokeEvent, type: ConnectionConfig['type']) => {
+      return manager.getCapabilitiesForType(type)
     }
   )
 
-  // Mock insert row
-  handleWithLogging(
-    'db:insert-row',
-    async (_event: IpcMainInvokeEvent, _tableName: string, _rowData: Record<string, unknown>) => {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      return true
+  handleWithLogging('db:delete-row', async (_event: IpcMainInvokeEvent, payloadOrTableName: unknown) => {
+    if (typeof payloadOrTableName === 'string') {
+      return handleLegacyRowMutationFallback('db:delete-row', String(payloadOrTableName))
     }
-  )
+    if (!isDeleteRowMutationPayload(payloadOrTableName)) {
+      return invalidMutationPayloadResult('db:delete-row')
+    }
 
-  // Mock duplicate row
-  handleWithLogging(
-    'db:duplicate-row',
-    async (_event: IpcMainInvokeEvent, _tableName: string, _primaryKeyObject: Record<string, unknown>) => {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      return true
+    return executeSqlMutation(
+      'db:delete-row',
+      payloadOrTableName.connectionId,
+      payloadOrTableName.databaseType,
+      {
+        tableName: payloadOrTableName.tableName,
+        database: payloadOrTableName.database,
+        schema: payloadOrTableName.schema
+      },
+      (target) => buildDeleteSql(target, payloadOrTableName.pkColumns, payloadOrTableName.rowData),
+      DELETE_ROW_SQL_ERROR
+    )
+  })
+
+  handleWithLogging('db:insert-row', async (_event: IpcMainInvokeEvent, payloadOrTableName: unknown) => {
+    if (typeof payloadOrTableName === 'string') {
+      return handleLegacyRowMutationFallback('db:insert-row', String(payloadOrTableName))
     }
-  )
+    if (!isInsertRowMutationPayload(payloadOrTableName)) {
+      return invalidMutationPayloadResult('db:insert-row')
+    }
+
+    return executeSqlMutation(
+      'db:insert-row',
+      payloadOrTableName.connectionId,
+      payloadOrTableName.databaseType,
+      {
+        tableName: payloadOrTableName.tableName,
+        database: payloadOrTableName.database,
+        schema: payloadOrTableName.schema
+      },
+      (target) => buildInsertSql(target, payloadOrTableName.rowData),
+      INSERT_ROW_SQL_ERROR
+    )
+  })
+
+  handleWithLogging('db:duplicate-row', async (_event: IpcMainInvokeEvent, payloadOrTableName: unknown) => {
+    if (typeof payloadOrTableName === 'string') {
+      return handleLegacyRowMutationFallback('db:duplicate-row', String(payloadOrTableName))
+    }
+    if (!isDuplicateRowMutationPayload(payloadOrTableName)) {
+      return invalidMutationPayloadResult('db:duplicate-row')
+    }
+
+    return executeSqlMutation(
+      'db:duplicate-row',
+      payloadOrTableName.connectionId,
+      payloadOrTableName.databaseType,
+      {
+        tableName: payloadOrTableName.tableName,
+        database: payloadOrTableName.database,
+        schema: payloadOrTableName.schema
+      },
+      (target) => buildDuplicateSql(target, payloadOrTableName.rowData, payloadOrTableName.pkColumns),
+      DUPLICATE_ROW_SQL_ERROR
+    )
+  })
+
+  handleWithLogging('db:copy-table-preview', async (_event: IpcMainInvokeEvent, payload: unknown) => {
+    if (!isCopyTablePayload(payload)) {
+      return createCopyTableFailure('Invalid payload for db:copy-table-preview.')
+    }
+
+    const executionPlan = getCopyTableExecutionPlan(manager, payload)
+    if ('success' in executionPlan) {
+      return executionPlan
+    }
+
+    return { success: true, statements: executionPlan.statements }
+  })
+
+  handleWithLogging('db:copy-table-execute', async (_event: IpcMainInvokeEvent, payload: unknown) => {
+    if (!isCopyTablePayload(payload)) {
+      return createCopyTableFailure('Invalid payload for db:copy-table-execute.')
+    }
+
+    const executionPlan = getCopyTableExecutionPlan(manager, payload)
+    if ('success' in executionPlan) {
+      return executionPlan
+    }
+
+    const { activeType, statements } = executionPlan
+    const shouldUseTransaction = activeType === 'postgres' && statements.length > 1
+
+    try {
+      if (shouldUseTransaction) {
+        const beginResult = await manager.query(payload.connectionId, 'BEGIN')
+        if (beginResult.error) {
+          return createCopyTableFailure(beginResult.error, statements)
+        }
+      }
+
+      for (const statement of statements) {
+        const result = await manager.query(payload.connectionId, statement)
+        if (result.error) {
+          if (shouldUseTransaction) {
+            await manager.query(payload.connectionId, 'ROLLBACK').catch(() => undefined)
+          }
+          return createCopyTableFailure(result.error, statements)
+        }
+      }
+
+      if (shouldUseTransaction) {
+        const commitResult = await manager.query(payload.connectionId, 'COMMIT')
+        if (commitResult.error) {
+          await manager.query(payload.connectionId, 'ROLLBACK').catch(() => undefined)
+          return createCopyTableFailure(commitResult.error, statements)
+        }
+      }
+
+      return { success: true, statements }
+    } catch (error) {
+      if (shouldUseTransaction) {
+        await manager.query(payload.connectionId, 'ROLLBACK').catch(() => undefined)
+      }
+      return createCopyTableFailure(error, statements)
+    }
+  })
 
   // Get databases list
   handleWithLogging('db:get-databases', async (_event: IpcMainInvokeEvent, connectionId: string) => {

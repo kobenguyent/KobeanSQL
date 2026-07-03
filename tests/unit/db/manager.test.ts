@@ -191,6 +191,38 @@ describe('ConnectionManager', () => {
     expect(manager.isConnected('any-id')).toBe(false)
   })
 
+  describe('getCapabilitiesForType', () => {
+    it('returns full management capabilities for all supported SQL write engines', () => {
+      const writableEngines = ['postgres', 'mysql', 'mariadb', 'sqlite', 'mssql', 'cockroachdb'] as const
+
+      for (const engine of writableEngines) {
+        expect(manager.getCapabilitiesForType(engine)).toEqual({
+          canInsertRow: true,
+          canDeleteRow: true,
+          canDuplicateRow: true,
+          canInlineUpdateRow: true,
+          canCopyTable: true,
+          canManageSchema: true,
+          supportsForeignKeys: true,
+          supportsProcedures: true
+        })
+      }
+    })
+
+    it('returns constrained capabilities for redis', () => {
+      expect(manager.getCapabilitiesForType('redis')).toEqual({
+        canInsertRow: false,
+        canDeleteRow: false,
+        canDuplicateRow: false,
+        canInlineUpdateRow: false,
+        canCopyTable: false,
+        canManageSchema: false,
+        supportsForeignKeys: false,
+        supportsProcedures: false
+      })
+    })
+  })
+
   it('connects successfully and marks connection as active', async () => {
     const config = {
       id: 'conn-1',

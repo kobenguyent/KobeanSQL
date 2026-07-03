@@ -24,6 +24,17 @@ export interface QueryResult {
   error?: string
 }
 
+export interface DatabaseManagementCapabilities {
+  canInsertRow: boolean
+  canDeleteRow: boolean
+  canDuplicateRow: boolean
+  canInlineUpdateRow: boolean
+  canCopyTable: boolean
+  canManageSchema: boolean
+  supportsForeignKeys: boolean
+  supportsProcedures: boolean
+}
+
 export interface ColumnDef {
   name: string
   type: string

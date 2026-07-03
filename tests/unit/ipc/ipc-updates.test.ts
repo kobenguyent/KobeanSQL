@@ -54,7 +54,7 @@ function getHandlers() {
   )
 }
 
-function getManagerStub() {
+function getManagerStub(overrides: Record<string, unknown> = {}) {
   return {
     on: vi.fn(),
     disconnectAll: vi.fn(),
@@ -63,12 +63,24 @@ function getManagerStub() {
     connect: vi.fn(),
     isConnected: vi.fn(),
     query: vi.fn(),
+    getConnectionDialect: vi.fn(() => 'postgres'),
+    getCapabilitiesForType: vi.fn(() => ({
+      canInsertRow: true,
+      canDeleteRow: true,
+      canDuplicateRow: true,
+      canInlineUpdateRow: true,
+      canCopyTable: true,
+      canManageSchema: true,
+      supportsForeignKeys: true,
+      supportsProcedures: true
+    })),
     getDatabases: vi.fn(),
     getTables: vi.fn(),
     getColumns: vi.fn(),
     getForeignKeys: vi.fn(),
     getProcedures: vi.fn(),
-    getServerVersion: vi.fn()
+    getServerVersion: vi.fn(),
+    ...overrides
   }
 }
 
@@ -321,21 +333,486 @@ describe('IPC database mutation channels', () => {
     handleMock.mockReset()
   })
 
-  it('supports deleteRow, insertRow, and duplicateRow operations', async () => {
+  it('executes insert, delete, and duplicate through manager.query for payload intents', async () => {
     const { registerIpcHandlers } = await import('../../../src/main/ipc')
-    registerIpcHandlers(getManagerStub() as never)
+    const queryMock = vi
+      .fn()
+      .mockResolvedValue({ columns: [], rows: [], rowCount: 1, duration: 1 })
+    const manager = getManagerStub({ query: queryMock, getConnectionDialect: vi.fn(() => 'postgres') })
+    registerIpcHandlers(manager as never)
     const handlers = getHandlers()
 
     expect(handlers['db:delete-row']).toBeTypeOf('function')
     expect(handlers['db:insert-row']).toBeTypeOf('function')
     expect(handlers['db:duplicate-row']).toBeTypeOf('function')
 
-    const deleteRes = await handlers['db:delete-row'](getTrustedEvent(), 'my_table', { id: 1 })
-    const insertRes = await handlers['db:insert-row'](getTrustedEvent(), 'my_table', { id: 1, name: 'test' })
-    const duplicateRes = await handlers['db:duplicate-row'](getTrustedEvent(), 'my_table', { id: 1 })
+    const insertRes = await handlers['db:insert-row'](getTrustedEvent(), {
+      connectionId: 'pg-1',
+      databaseType: 'postgres',
+      tableName: 'users',
+      database: 'app',
+      schema: 'public',
+      rowData: { id: 1, name: 'Ada' }
+    })
+    const deleteRes = await handlers['db:delete-row'](getTrustedEvent(), {
+      connectionId: 'pg-1',
+      databaseType: 'postgres',
+      tableName: 'users',
+      database: 'app',
+      schema: 'public',
+      pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+      rowData: { id: 1, name: 'Ada' }
+    })
+    const duplicateRes = await handlers['db:duplicate-row'](getTrustedEvent(), {
+      connectionId: 'pg-1',
+      databaseType: 'postgres',
+      tableName: 'users',
+      database: 'app',
+      schema: 'public',
+      pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+      rowData: { id: 1, name: 'Ada' }
+    })
 
-    expect(deleteRes).toBe(true)
-    expect(insertRes).toBe(true)
-    expect(duplicateRes).toBe(true)
+    expect(queryMock).toHaveBeenNthCalledWith(
+      1,
+      'pg-1',
+      `INSERT INTO "public"."users" ("id", "name") VALUES (1, 'Ada');`
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      2,
+      'pg-1',
+      `DELETE FROM "public"."users" WHERE "id" = 1;`
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      3,
+      'pg-1',
+      `INSERT INTO "public"."users" ("name") VALUES ('Ada');`
+    )
+    expect(insertRes).toEqual({
+      success: true,
+      sql: `INSERT INTO "public"."users" ("id", "name") VALUES (1, 'Ada');`,
+      error: undefined
+    })
+    expect(deleteRes).toEqual({
+      success: true,
+      sql: `DELETE FROM "public"."users" WHERE "id" = 1;`,
+      error: undefined
+    })
+    expect(duplicateRes).toEqual({
+      success: true,
+      sql: `INSERT INTO "public"."users" ("name") VALUES ('Ada');`,
+      error: undefined
+    })
+  })
+
+  it('returns a structured failure when SQL execution rejects', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const queryMock = vi.fn().mockRejectedValue(new Error('constraint violation'))
+    const manager = getManagerStub({ query: queryMock, getConnectionDialect: vi.fn(() => 'postgres') })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: `INSERT INTO "public"."users" ("id", "name") VALUES (1, 'Ada');`,
+      error: 'constraint violation'
+    })
+  })
+
+  it('returns a structured failure when dialect resolution throws', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub({
+      getConnectionDialect: vi.fn(() => {
+        throw new Error('Not connected: pg-1')
+      })
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Not connected: pg-1'
+    })
+  })
+
+  it('returns a structured failure for malformed object payloads instead of the legacy success fallback', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), { tableName: 'users', rowData: { id: 1 } })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Invalid payload for db:insert-row.'
+    })
+    expect(manager.query).not.toHaveBeenCalled()
+  })
+
+  it('returns a structured failure before execution when delete payload has no primary keys', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:delete-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        pkColumns: [],
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Delete row mutation requires at least one primary key column.'
+    })
+    expect(manager.query).not.toHaveBeenCalled()
+  })
+
+  it('validates row-mutation support per operation instead of as an all-or-nothing gate', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const queryMock = vi.fn().mockResolvedValue({ columns: [], rows: [], rowCount: 1, duration: 1 })
+    const manager = getManagerStub({
+      query: queryMock,
+      getConnectionDialect: vi.fn(() => 'postgres'),
+      getCapabilitiesForType: vi.fn(() => ({
+        canInsertRow: true,
+        canDeleteRow: false,
+        canDuplicateRow: false,
+        canInlineUpdateRow: true,
+        canCopyTable: true,
+        canManageSchema: true,
+        supportsForeignKeys: true,
+        supportsProcedures: true
+      }))
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: true,
+      sql: `INSERT INTO "public"."users" ("id", "name") VALUES (1, 'Ada');`,
+      error: undefined
+    })
+
+    await expect(
+      handlers['db:delete-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Delete row mutations are not supported for postgres.'
+    })
+
+    await expect(
+      handlers['db:duplicate-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+        rowData: { id: 1, name: 'Ada' }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Duplicate row mutations are not supported for postgres.'
+    })
+
+    expect(queryMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a structured failure before execution when insert payload has no writable columns', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:insert-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        rowData: {}
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Insert row mutation requires at least one column value.'
+    })
+    expect(manager.query).not.toHaveBeenCalled()
+  })
+
+  it('returns a structured failure before execution when duplicate payload only contains primary-key columns', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(
+      handlers['db:duplicate-row'](getTrustedEvent(), {
+        connectionId: 'pg-1',
+        databaseType: 'postgres',
+        tableName: 'users',
+        database: 'app',
+        schema: 'public',
+        pkColumns: [{ name: 'id', type: 'int4', nullable: false, primaryKey: true }],
+        rowData: { id: 1 }
+      })
+    ).resolves.toEqual({
+      success: false,
+      sql: '',
+      error: 'Duplicate row mutation requires at least one non-primary-key column.'
+    })
+    expect(manager.query).not.toHaveBeenCalled()
+  })
+
+  it('keeps the legacy mutation signature on a compatibility fallback for current callers', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(handlers['db:delete-row'](getTrustedEvent(), 'my_table', { id: 1 })).resolves.toBe(true)
+    await expect(handlers['db:insert-row'](getTrustedEvent(), 'my_table', { id: 1, name: 'test' })).resolves.toBe(true)
+    await expect(handlers['db:duplicate-row'](getTrustedEvent(), 'my_table', { id: 1 })).resolves.toBe(true)
+    expect(manager.query).not.toHaveBeenCalled()
+  })
+})
+
+describe('IPC capability channels', () => {
+  beforeEach(() => {
+    handleMock.mockReset()
+  })
+
+  it('supports capability lookup by database type', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub()
+    manager.getCapabilitiesForType.mockReturnValue({
+      canInsertRow: true,
+      canDeleteRow: true,
+      canDuplicateRow: true,
+      canInlineUpdateRow: true,
+      canCopyTable: true,
+      canManageSchema: true,
+      supportsForeignKeys: true,
+      supportsProcedures: true
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    expect(handlers['db:get-capabilities-for-type']).toBeTypeOf('function')
+
+    const result = await handlers['db:get-capabilities-for-type'](getTrustedEvent(), 'postgres')
+
+    expect(manager.getCapabilitiesForType).toHaveBeenCalledWith('postgres')
+    expect(result).toEqual({
+      canInsertRow: true,
+      canDeleteRow: true,
+      canDuplicateRow: true,
+      canInlineUpdateRow: true,
+      canCopyTable: true,
+      canManageSchema: true,
+      supportsForeignKeys: true,
+      supportsProcedures: true
+    })
+  })
+})
+
+describe('IPC copy-table channels', () => {
+  beforeEach(() => {
+    handleMock.mockReset()
+  })
+
+  it('previews and executes same-connection copy-table statements for supported SQL engines', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const queryMock = vi
+      .fn()
+      .mockResolvedValue({ columns: [], rows: [], rowCount: 0, duration: 1 })
+    const manager = getManagerStub({
+      query: queryMock,
+      getConnectionDialect: vi.fn(() => 'postgres'),
+      getCapabilitiesForType: vi.fn(() => ({
+        canInsertRow: true,
+        canDeleteRow: true,
+        canDuplicateRow: true,
+        canInlineUpdateRow: true,
+        canCopyTable: true,
+        canManageSchema: true,
+        supportsForeignKeys: true,
+        supportsProcedures: true
+      }))
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+    const payload = {
+      connectionId: 'pg-1',
+      databaseType: 'postgres' as const,
+      sourceTable: 'users',
+      sourceSchema: 'public',
+      targetTable: 'users_backup',
+      targetSchema: 'public',
+      mode: 'schema-and-data' as const
+    }
+
+    expect(handlers['db:copy-table-preview']).toBeTypeOf('function')
+    expect(handlers['db:copy-table-execute']).toBeTypeOf('function')
+
+    await expect(handlers['db:copy-table-preview'](getTrustedEvent(), payload)).resolves.toEqual({
+      success: true,
+      statements: [
+        'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);',
+        'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+      ]
+    })
+
+    await expect(handlers['db:copy-table-execute'](getTrustedEvent(), payload)).resolves.toEqual({
+      success: true,
+      statements: [
+        'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);',
+        'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+      ]
+    })
+
+    expect(queryMock).toHaveBeenNthCalledWith(
+      1,
+      'pg-1',
+      'BEGIN'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      2,
+      'pg-1',
+      'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      3,
+      'pg-1',
+      'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(4, 'pg-1', 'COMMIT')
+  })
+
+  it('rolls back schema-and-data execution when a later copy statement fails', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const queryMock = vi
+      .fn()
+      .mockResolvedValueOnce({ columns: [], rows: [], rowCount: 0, duration: 1 })
+      .mockResolvedValueOnce({ columns: [], rows: [], rowCount: 0, duration: 1 })
+      .mockResolvedValueOnce({ columns: [], rows: [], rowCount: 0, duration: 1, error: 'permission denied' })
+      .mockResolvedValueOnce({ columns: [], rows: [], rowCount: 0, duration: 1 })
+    const manager = getManagerStub({
+      query: queryMock,
+      getConnectionDialect: vi.fn(() => 'postgres'),
+      getCapabilitiesForType: vi.fn(() => ({
+        canInsertRow: true,
+        canDeleteRow: true,
+        canDuplicateRow: true,
+        canInlineUpdateRow: true,
+        canCopyTable: true,
+        canManageSchema: true,
+        supportsForeignKeys: true,
+        supportsProcedures: true
+      }))
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+    const payload = {
+      connectionId: 'pg-1',
+      databaseType: 'postgres' as const,
+      sourceTable: 'users',
+      sourceSchema: 'public',
+      targetTable: 'users_backup',
+      targetSchema: 'public',
+      mode: 'schema-and-data' as const
+    }
+
+    await expect(handlers['db:copy-table-execute'](getTrustedEvent(), payload)).resolves.toEqual({
+      success: false,
+      statements: [
+        'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);',
+        'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+      ],
+      error: 'permission denied'
+    })
+
+    expect(queryMock).toHaveBeenNthCalledWith(1, 'pg-1', 'BEGIN')
+    expect(queryMock).toHaveBeenNthCalledWith(
+      2,
+      'pg-1',
+      'CREATE TABLE "public"."users_backup" (LIKE "public"."users" INCLUDING ALL);'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      3,
+      'pg-1',
+      'INSERT INTO "public"."users_backup" SELECT * FROM "public"."users";'
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(4, 'pg-1', 'ROLLBACK')
+  })
+
+  it('rejects copy-table requests that reuse the source table as the target', async () => {
+    const { registerIpcHandlers } = await import('../../../src/main/ipc')
+    const manager = getManagerStub({
+      getConnectionDialect: vi.fn(() => 'postgres')
+    })
+    registerIpcHandlers(manager as never)
+    const handlers = getHandlers()
+
+    await expect(handlers['db:copy-table-preview'](getTrustedEvent(), {
+      connectionId: 'pg-1',
+      databaseType: 'postgres',
+      sourceTable: 'users',
+      sourceSchema: 'public',
+      targetTable: 'users',
+      targetSchema: 'public',
+      mode: 'schema-only'
+    })).resolves.toEqual({
+      success: false,
+      statements: [],
+      error: 'Source and target table must be different.'
+    })
   })
 })
