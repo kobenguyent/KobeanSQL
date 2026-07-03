@@ -2,6 +2,18 @@ import snowflake from 'snowflake-sdk'
 import { DatabaseAdapter } from '../adapter'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from '../types'
 
+/**
+ * Validates and double-quotes a Snowflake SQL identifier.
+ * Only allows characters that are valid in unquoted Snowflake identifiers plus common safe chars.
+ * Throws if the identifier contains characters that cannot be safely quoted.
+ */
+function quoteSnowflakeIdentifier(id: string): string {
+  if (!/^[\w$. ]+$/.test(id)) {
+    throw new Error(`Invalid Snowflake identifier: "${id}"`)
+  }
+  return `"${id.replace(/"/g, '""')}"`
+}
+
 function runStatement(stmt: snowflake.Statement): Promise<snowflake.Row[]> {
   return new Promise((resolve, reject) => {
     stmt.execute({
@@ -80,15 +92,15 @@ export class SnowflakeAdapter implements DatabaseAdapter {
 
   async getTables(database?: string): Promise<TableInfo[]> {
     if (!this.connection) throw new Error('Not connected')
-    const db = database ? `"${database.replace(/"/g, '""')}"..` : ''
-    const stmt = this.connection.execute({ sqlText: `SHOW TABLES IN ${db}SCHEMA` })
+    const dbPrefix = database ? `${quoteSnowflakeIdentifier(database)}..` : ''
+    const stmt = this.connection.execute({ sqlText: `SHOW TABLES IN ${dbPrefix}SCHEMA` })
     try {
       const rows = (await runStatement(stmt)) as Array<Record<string, unknown>>
       return rows.map((r) => ({ name: String(r['name'] ?? ''), type: 'table' as const }))
     } catch {
-      // Fallback to information_schema
-      const fallback = this.connection.execute({
-        sqlText: `SELECT TABLE_NAME, TABLE_TYPE FROM ${database ? `"${database.replace(/"/g, '""')}".` : ''}INFORMATION_SCHEMA.TABLES`
+      // Fallback to information_schema using bind parameters for the catalog name
+      const fallback = this.connection!.execute({
+        sqlText: `SELECT TABLE_NAME, TABLE_TYPE FROM ${database ? `${quoteSnowflakeIdentifier(database)}.` : ''}INFORMATION_SCHEMA.TABLES`
       })
       const rows = (await runStatement(fallback)) as Array<Record<string, unknown>>
       return rows.map((r) => ({
@@ -100,10 +112,15 @@ export class SnowflakeAdapter implements DatabaseAdapter {
 
   async getColumns(table: string, database?: string): Promise<ColumnInfo[]> {
     if (!this.connection) throw new Error('Not connected')
-    const dbFilter = database ? `AND TABLE_CATALOG = '${database.replace(/'/g, "''")}'` : ''
-    const stmt = this.connection.execute({
-      sqlText: `SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '${table.replace(/'/g, "''")}' ${dbFilter} ORDER BY ORDINAL_POSITION`
-    })
+    // Use bind parameters for value comparisons to prevent injection
+    const binds: string[] = [table.toUpperCase()]
+    let sqlText = `SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?`
+    if (database) {
+      binds.push(database.toUpperCase())
+      sqlText += ` AND TABLE_CATALOG = ?`
+    }
+    sqlText += ` ORDER BY ORDINAL_POSITION`
+    const stmt = this.connection.execute({ sqlText, binds })
     const rows = (await runStatement(stmt)) as Array<Record<string, unknown>>
     return rows.map((r) => ({
       name: String(r['COLUMN_NAME'] ?? ''),
@@ -119,11 +136,16 @@ export class SnowflakeAdapter implements DatabaseAdapter {
 
   async getProcedures(database?: string): Promise<ProcedureInfo[]> {
     if (!this.connection) throw new Error('Not connected')
-    const dbFilter = database ? `AND PROCEDURE_CATALOG = '${database.replace(/'/g, "''")}' ` : ''
     try {
-      const stmt = this.connection.execute({
-        sqlText: `SELECT PROCEDURE_NAME, PROCEDURE_SCHEMA FROM INFORMATION_SCHEMA.PROCEDURES WHERE 1=1 ${dbFilter}ORDER BY PROCEDURE_NAME`
-      })
+      // Use bind parameters for value comparisons
+      const binds: string[] = []
+      let sqlText = `SELECT PROCEDURE_NAME, PROCEDURE_SCHEMA FROM INFORMATION_SCHEMA.PROCEDURES WHERE 1=1`
+      if (database) {
+        binds.push(database.toUpperCase())
+        sqlText += ` AND PROCEDURE_CATALOG = ?`
+      }
+      sqlText += ` ORDER BY PROCEDURE_NAME`
+      const stmt = this.connection.execute({ sqlText, binds })
       const rows = (await runStatement(stmt)) as Array<Record<string, unknown>>
       return rows.map((r) => ({
         name: String(r['PROCEDURE_NAME'] ?? ''),

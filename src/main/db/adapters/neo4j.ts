@@ -2,6 +2,18 @@ import neo4j, { Driver, Session } from 'neo4j-driver'
 import { DatabaseAdapter } from '../adapter'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from '../types'
 
+/**
+ * Validates a Neo4j node label for use in Cypher pattern matching.
+ * Neo4j labels must start with a letter/underscore and contain only alphanumeric chars and underscores,
+ * or can be any string when backtick-escaped (we validate to prevent injection).
+ */
+function validateNeo4jLabel(label: string): string {
+  if (!label || /[`\x00-\x1F]/.test(label)) {
+    throw new Error(`Invalid Neo4j label: "${label}"`)
+  }
+  return label
+}
+
 export class Neo4jAdapter implements DatabaseAdapter {
   dialect: ConnectionConfig['type'] = 'neo4j'
   private driver: Driver | null = null
@@ -94,9 +106,10 @@ export class Neo4jAdapter implements DatabaseAdapter {
   async getColumns(label: string, database?: string): Promise<ColumnInfo[]> {
     const session = this.getSession(database)
     try {
-      // Sample a node to infer property keys
+      const safeLabel = validateNeo4jLabel(label)
+      // Sample a node to infer property keys. Backtick-escaping the label after validation.
       const result = await session.run(
-        `MATCH (n:\`${label.replace(/`/g, '``')}\`) RETURN keys(n) AS keys LIMIT 1`
+        `MATCH (n:\`${safeLabel.replace(/`/g, '``')}\`) RETURN keys(n) AS keys LIMIT 1`
       )
       if (result.records.length === 0) return []
       const keys: string[] = result.records[0].get('keys') as string[]
