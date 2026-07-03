@@ -1,3 +1,10 @@
+# [1.30.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.29.0...v1.30.0) (2026-07-03)
+
+
+### Features
+
+* **database:** harden management actions and add copy-table v1 ([#72](https://github.com/kobenguyent/KobeanSQL/issues/72)) ([6b226ca](https://github.com/kobenguyent/KobeanSQL/commit/6b226ca83c9f71b58adb76c9e91f55cfca4f6cea))
+
 # [1.29.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.28.0...v1.29.0) (2026-06-19)
 
 
