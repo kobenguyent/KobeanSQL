@@ -180,6 +180,57 @@ vi.mock('../../../src/main/db/adapters/oracle', () => ({
   }
 }))
 
+vi.mock('../../../src/main/db/adapters/influxdb', () => ({
+  InfluxDBAdapter: class {
+    dialect = 'influxdb'
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [{ name: '_value', type: 'string' }], rows: [{ _value: '42' }], rowCount: 1, duration: 1 } }
+    async getDatabases() { return ['metrics', 'telegraf'] }
+    async getTables() { return [{ name: 'cpu', type: 'table' }, { name: 'mem', type: 'table' }] }
+    async getColumns() { return [{ name: '_time', type: 'timestamp', nullable: false, primaryKey: true }, { name: 'usage_idle', type: 'field', nullable: true, primaryKey: false }] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [] }
+    async ping() { return true }
+    async getServerVersion() { return 'InfluxDB 2.7.1' }
+  }
+}))
+
+vi.mock('../../../src/main/db/adapters/neo4j', () => ({
+  Neo4jAdapter: class {
+    dialect = 'neo4j'
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [{ name: 'n', type: 'string' }], rows: [{ n: 'Alice' }], rowCount: 1, duration: 1 } }
+    async getDatabases() { return ['neo4j', 'movies'] }
+    async getTables() { return [{ name: 'Person', type: 'table' }, { name: 'Movie', type: 'table' }] }
+    async getColumns() { return [{ name: 'name', type: 'string', nullable: true, primaryKey: false }] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [{ name: 'apoc.help', type: 'procedure' }] }
+    async ping() { return true }
+    async getServerVersion() { return 'Neo4j 5.15.0 (community)' }
+  }
+}))
+
+vi.mock('../../../src/main/db/adapters/snowflake', () => ({
+  SnowflakeAdapter: class {
+    dialect = 'snowflake'
+    async connect() {}
+    async disconnect() {}
+    isConnected() { return true }
+    async query() { return { columns: [{ name: 'COUNT', type: 'string' }], rows: [{ COUNT: '100' }], rowCount: 1, duration: 1 } }
+    async getDatabases() { return ['ANALYTICS', 'RAW'] }
+    async getTables() { return [{ name: 'EVENTS', type: 'table' }, { name: 'USERS', type: 'table' }] }
+    async getColumns() { return [{ name: 'USER_ID', type: 'NUMBER', nullable: false, primaryKey: true }] }
+    async getForeignKeys() { return [] }
+    async getProcedures() { return [{ name: 'TRANSFORM_EVENTS', schema: 'PUBLIC', type: 'procedure' }] }
+    async ping() { return true }
+    async getServerVersion() { return 'Snowflake 8.12.0' }
+  }
+}))
+
 describe('ConnectionManager', () => {
   let manager: ConnectionManager
 
@@ -523,5 +574,94 @@ describe('ConnectionManager', () => {
     expect(procs[0].name).toBe('GET_EMPLOYEE')
     expect(procs[0].type).toBe('procedure')
     await expect(manager.getServerVersion('ora-1')).resolves.toMatch(/Oracle/)
+  })
+
+  it('connects to InfluxDB through the adapter', async () => {
+    const config = {
+      id: 'influx-1',
+      name: 'InfluxDB Local',
+      type: 'influxdb' as const,
+      host: 'localhost',
+      port: 8086,
+      user: 'myorg',
+      password: 'my-token'
+    }
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('influx-1')).toBe(true)
+    await expect(manager.getDatabases('influx-1')).resolves.toContain('metrics')
+    const tables = await manager.getTables('influx-1')
+    expect(tables).toHaveLength(2)
+    expect(tables[0].name).toBe('cpu')
+    const columns = await manager.getColumns('influx-1', 'cpu')
+    expect(columns.some((c) => c.name === '_time')).toBe(true)
+    await expect(manager.getServerVersion('influx-1')).resolves.toMatch(/InfluxDB/)
+  })
+
+  it('connects to Neo4j through the adapter', async () => {
+    const config = {
+      id: 'neo4j-1',
+      name: 'Neo4j Local',
+      type: 'neo4j' as const,
+      host: 'localhost',
+      port: 7687,
+      user: 'neo4j',
+      password: 'password',
+      database: 'neo4j'
+    }
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('neo4j-1')).toBe(true)
+    await expect(manager.getDatabases('neo4j-1')).resolves.toContain('neo4j')
+    const tables = await manager.getTables('neo4j-1')
+    expect(tables).toHaveLength(2)
+    expect(tables[0].name).toBe('Person')
+    const procs = await manager.getProcedures('neo4j-1')
+    expect(procs).toHaveLength(1)
+    expect(procs[0].name).toBe('apoc.help')
+    await expect(manager.getServerVersion('neo4j-1')).resolves.toMatch(/Neo4j/)
+  })
+
+  it('connects to Snowflake through the adapter', async () => {
+    const config = {
+      id: 'sf-1',
+      name: 'Snowflake Prod',
+      type: 'snowflake' as const,
+      host: 'myaccount.snowflakecomputing.com',
+      user: 'myuser',
+      password: 'mypass',
+      database: 'ANALYTICS'
+    }
+    const result = await manager.connect(config)
+    expect(result.success).toBe(true)
+    expect(manager.isConnected('sf-1')).toBe(true)
+    await expect(manager.getDatabases('sf-1')).resolves.toContain('ANALYTICS')
+    const tables = await manager.getTables('sf-1')
+    expect(tables).toHaveLength(2)
+    expect(tables[0].name).toBe('EVENTS')
+    const procs = await manager.getProcedures('sf-1')
+    expect(procs).toHaveLength(1)
+    expect(procs[0].name).toBe('TRANSFORM_EVENTS')
+    await expect(manager.getServerVersion('sf-1')).resolves.toMatch(/Snowflake/)
+  })
+
+  describe('getCapabilitiesForType — new DB types', () => {
+    it('returns limited capabilities for influxdb', () => {
+      const caps = manager.getCapabilitiesForType('influxdb')
+      expect(caps.canInsertRow).toBe(false)
+      expect(caps.supportsProcedures).toBe(false)
+    })
+
+    it('returns limited capabilities for neo4j', () => {
+      const caps = manager.getCapabilitiesForType('neo4j')
+      expect(caps.canInsertRow).toBe(false)
+      expect(caps.supportsForeignKeys).toBe(false)
+    })
+
+    it('returns limited capabilities for snowflake (procedures supported)', () => {
+      const caps = manager.getCapabilitiesForType('snowflake')
+      expect(caps.canInsertRow).toBe(false)
+      expect(caps.supportsProcedures).toBe(true)
+    })
   })
 })

@@ -12,6 +12,9 @@ import { CassandraAdapter } from './adapters/cassandra'
 import { RedisAdapter } from './adapters/redis'
 import { ElasticsearchAdapter } from './adapters/elasticsearch'
 import { OracleAdapter } from './adapters/oracle'
+import { InfluxDBAdapter } from './adapters/influxdb'
+import { Neo4jAdapter } from './adapters/neo4j'
+import { SnowflakeAdapter } from './adapters/snowflake'
 import { ConnectionConfig, QueryResult, TableInfo, ColumnInfo, ProcedureInfo, ForeignKeyInfo } from './types'
 import { getCapabilitiesForType as resolveCapabilitiesForType, type DatabaseManagementCapabilities } from './capabilities'
 import { appLogger } from '../logger'
@@ -55,7 +58,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, errorMessage: str
 /** Simple SQL interceptor to append LIMIT if missing */
 function applySafetyLimit(sql: string, type: ConnectionConfig['type']): string {
   // Only apply to SQL-like databases
-  if (!['mysql', 'mariadb', 'postgres', 'mssql', 'sqlite', 'cockroachdb', 'clickhouse', 'oracle', 'cassandra'].includes(type)) {
+  if (!['mysql', 'mariadb', 'postgres', 'mssql', 'sqlite', 'cockroachdb', 'clickhouse', 'oracle', 'cassandra', 'snowflake'].includes(type)) {
     return sql
   }
 
@@ -139,6 +142,12 @@ export class ConnectionManager extends EventEmitter {
         return new ElasticsearchAdapter()
       case 'oracle':
         return new OracleAdapter()
+      case 'influxdb':
+        return new InfluxDBAdapter()
+      case 'neo4j':
+        return new Neo4jAdapter()
+      case 'snowflake':
+        return new SnowflakeAdapter()
       default:
         throw new Error(`Unsupported database type: ${type}`)
     }

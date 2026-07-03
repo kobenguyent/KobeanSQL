@@ -42,6 +42,18 @@ export function getCapabilitiesForType(type: DatabaseType): DatabaseManagementCa
     case 'mssql':
     case 'cockroachdb':
       return { ...FULL_SQL_CAPABILITIES }
+    case 'snowflake':
+      return {
+        ...LIMITED_CAPABILITIES,
+        canInsertRow: false,
+        canDeleteRow: false,
+        canDuplicateRow: false,
+        canInlineUpdateRow: false,
+        canCopyTable: false,
+        canManageSchema: false,
+        supportsForeignKeys: false,
+        supportsProcedures: true
+      }
     default:
       return { ...LIMITED_CAPABILITIES }
   }

@@ -92,3 +92,35 @@ which requires the **Oracle Instant Client** native libraries to be installed on
   installation step in your workflow before running tests that require Oracle.
 - Oracle-specific tests can be skipped in environments without Instant Client by checking for the
   `oracledb` module load error and marking them as pending/skipped.
+
+---
+
+## Adding a new database adapter
+
+All adapters implement the `DatabaseAdapter` interface in `src/main/db/adapter.ts`.
+
+### Steps
+
+1. **Create the adapter** — add `src/main/db/adapters/<type>.ts` implementing `DatabaseAdapter`.
+2. **Register the type** — add the new `DatabaseType` value to both:
+   - `src/main/db/types.ts`
+   - `src/renderer/src/types/index.ts`
+3. **Assign a category** — add the type to `DB_CATEGORY` in both type files using one of:
+   `'relational' | 'document' | 'key-value' | 'wide-column' | 'time-series' | 'graph' | 'cloud-warehouse'`
+4. **Register in the manager** — add a `case` for the new type in `ConnectionManager.createAdapter()` (`src/main/db/manager.ts`).
+5. **Add capabilities** — update `getCapabilitiesForType()` in `src/main/db/capabilities.ts`.
+6. **Add a UI logo** — add an SVG entry to `DB_LOGOS` in `src/renderer/src/components/ConnectionModal/index.tsx`.
+7. **Add color and port** — extend `DB_COLORS` and `DB_DEFAULT_PORTS` in `src/renderer/src/types/index.ts`.
+8. **Write tests** — add adapter mocks and test cases to `tests/unit/db/manager.test.ts` and update `tests/unit/db/db-categories.test.ts`.
+
+### Supported categories
+
+| Category | Label | Use for |
+|----------|-------|---------|
+| `relational` | Relational SQL | Traditional RDBMS with SQL and full ACID support |
+| `document` | Document NoSQL | JSON/BSON document stores and search engines |
+| `key-value` | Key-Value | In-memory or persistent key-value stores |
+| `wide-column` | Wide-Column | Column-family stores with sparse row schema |
+| `time-series` | Time-Series | Optimised for time-stamped measurements |
+| `graph` | Graph | Native graph databases with node/relationship model |
+| `cloud-warehouse` | Cloud Data Warehouse | Columnar OLAP engines and managed cloud warehouses |

@@ -8,7 +8,7 @@
 
 # KobeanSQL
 
-> A cross-platform desktop SQL client for developers — query, explore, visualize, and manage 12 database engines (MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle) from a single, beautiful native app — no browser, no cloud, no data leaving your machine.
+> A cross-platform desktop SQL client for developers — query, explore, visualize, and manage 15 database engines across 7 categories (Relational SQL, Document NoSQL, Key-Value, Wide-Column, Time-Series, Graph, and Cloud Data Warehouse) from a single, beautiful native app — no browser, no cloud, no data leaving your machine.
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/kobenguyent/KobeanSQL/ci.yml?branch=main&style=flat-square&label=build)](https://github.com/kobenguyent/KobeanSQL/actions)
 [![Version](https://img.shields.io/github/package-json/v/kobenguyent/KobeanSQL?style=flat-square&color=7b7bea)](https://github.com/kobenguyent/KobeanSQL/releases/latest)
@@ -36,7 +36,17 @@
 ## ✨ Key Features
 
 ### Connection Management
-- **Multi-database support** — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server (MSSQL), MongoDB, CockroachDB, ClickHouse, Cassandra/ScyllaDB, Redis, Elasticsearch, and Oracle from a single UI
+- **Multi-database support** — 15 database engines across 7 categories from a single UI:
+  | Category | Engines |
+  |----------|---------|
+  | Relational SQL | MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, CockroachDB, Oracle |
+  | Document NoSQL | MongoDB, Elasticsearch |
+  | Key-Value | Redis |
+  | Wide-Column | Cassandra / ScyllaDB |
+  | Time-Series | InfluxDB |
+  | Graph | Neo4j |
+  | Cloud Data Warehouse | ClickHouse, Snowflake |
+- **Categorized DB picker** — the connection modal groups all supported engines by category so you can quickly find the right one
 - **Connection tester** — validate host/port/credentials before saving, with a clear success/error banner
 - **Persistent connections** — saved across app restarts; stored in your OS user-data directory
 - **Connection import / export** — portable JSON backup and restore with validation, duplicate detection, and selective password inclusion

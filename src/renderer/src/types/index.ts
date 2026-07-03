@@ -1,4 +1,34 @@
-export type DatabaseType = 'mysql' | 'mariadb' | 'postgres' | 'sqlite' | 'mssql' | 'mongodb' | 'cockroachdb' | 'clickhouse' | 'cassandra' | 'redis' | 'elasticsearch' | 'oracle'
+export type DatabaseType = 'mysql' | 'mariadb' | 'postgres' | 'sqlite' | 'mssql' | 'mongodb' | 'cockroachdb' | 'clickhouse' | 'cassandra' | 'redis' | 'elasticsearch' | 'oracle' | 'influxdb' | 'neo4j' | 'snowflake'
+
+export type DatabaseCategory = 'relational' | 'document' | 'key-value' | 'wide-column' | 'time-series' | 'graph' | 'cloud-warehouse'
+
+export const DB_CATEGORY: Record<DatabaseType, DatabaseCategory> = {
+  mysql: 'relational',
+  mariadb: 'relational',
+  postgres: 'relational',
+  sqlite: 'relational',
+  mssql: 'relational',
+  cockroachdb: 'relational',
+  oracle: 'relational',
+  mongodb: 'document',
+  elasticsearch: 'document',
+  redis: 'key-value',
+  cassandra: 'wide-column',
+  influxdb: 'time-series',
+  neo4j: 'graph',
+  clickhouse: 'cloud-warehouse',
+  snowflake: 'cloud-warehouse'
+}
+
+export const DB_CATEGORY_LABELS: Record<DatabaseCategory, string> = {
+  'relational': 'Relational SQL',
+  'document': 'Document NoSQL',
+  'key-value': 'Key-Value',
+  'wide-column': 'Wide-Column',
+  'time-series': 'Time-Series',
+  'graph': 'Graph',
+  'cloud-warehouse': 'Cloud Data Warehouse'
+}
 
 export interface ConnectionConfig {
   id: string
@@ -170,7 +200,10 @@ export const DB_COLORS: Record<DatabaseType, string> = {
   cassandra: '#1287b1',
   redis: '#dc2626',
   elasticsearch: '#f59e0b',
-  oracle: '#e11d48'
+  oracle: '#e11d48',
+  influxdb: '#22d3ee',
+  neo4j: '#00b388',
+  snowflake: '#29b5e8'
 }
 
 export const DB_DEFAULT_PORTS: Record<DatabaseType, number | undefined> = {
@@ -185,5 +218,8 @@ export const DB_DEFAULT_PORTS: Record<DatabaseType, number | undefined> = {
   cassandra: 9042,
   redis: 6379,
   elasticsearch: 9200,
-  oracle: 1521
+  oracle: 1521,
+  influxdb: 8086,
+  neo4j: 7687,
+  snowflake: undefined
 }

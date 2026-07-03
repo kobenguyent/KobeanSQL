@@ -3,7 +3,7 @@ import { DB_COLORS, DB_DEFAULT_PORTS } from '../../../src/renderer/src/types'
 
 describe('DB_COLORS', () => {
   it('has a color for every supported database type', () => {
-    const types = ['mysql', 'mariadb', 'postgres', 'sqlite', 'mssql', 'mongodb'] as const
+    const types = ['mysql', 'mariadb', 'postgres', 'sqlite', 'mssql', 'mongodb', 'influxdb', 'neo4j', 'snowflake'] as const
     for (const type of types) {
       expect(DB_COLORS[type]).toMatch(/^#[0-9a-fA-F]{6}$/)
     }
@@ -33,5 +33,17 @@ describe('DB_DEFAULT_PORTS', () => {
 
   it('returns correct default port for MongoDB', () => {
     expect(DB_DEFAULT_PORTS['mongodb']).toBe(27017)
+  })
+
+  it('returns correct default port for InfluxDB', () => {
+    expect(DB_DEFAULT_PORTS['influxdb']).toBe(8086)
+  })
+
+  it('returns correct default port for Neo4j', () => {
+    expect(DB_DEFAULT_PORTS['neo4j']).toBe(7687)
+  })
+
+  it('returns undefined for Snowflake (account-based, no fixed port)', () => {
+    expect(DB_DEFAULT_PORTS['snowflake']).toBeUndefined()
   })
 })
