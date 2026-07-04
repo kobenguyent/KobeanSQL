@@ -19,8 +19,8 @@
 
 ## 📸 Screenshots
 
-### Add connection flow — test connection successfully, then save
-![Add connection flow](docs/screenshots/flow-add-connection.png)
+### Add connection flow — choose database type by category, test connection, then save
+![Add connection flow with categorized database picker](docs/screenshots/flow-add-connection.png)
 
 ### Querying data flow — run queries successfully and view results
 ![Querying data flow](docs/screenshots/flow-query-data.png)
@@ -109,6 +109,9 @@
 | Redis             | `ioredis`                  | 6379         |
 | Elasticsearch     | `@elastic/elasticsearch`   | 9200         |
 | Oracle            | `oracledb`                 | 1521         |
+| InfluxDB          | `@influxdata/influxdb-client` | 8086      |
+| Neo4j             | `neo4j-driver`             | 7687         |
+| Snowflake         | `snowflake-sdk`            | — (account endpoint) |
 
 ### Adapter Notes
 
@@ -120,6 +123,9 @@
 | Redis          | Free-form CLI commands are tokenized and dispatched via `ioredis`. Keys are listed with `SCAN`. Databases are selected with `SELECT n`. |
 | Elasticsearch  | Accepts JSON DSL or a simplified `INDEX: { … }` syntax. Nested mapping properties are flattened for `getColumns()`.         |
 | Oracle         | Queries `ALL_TABLES`, `ALL_VIEWS`, `ALL_TAB_COLUMNS`, and `ALL_PROCEDURES`. Trailing semicolons are stripped automatically (Oracle rejects them). Requires Oracle Instant Client — see [DEVELOPMENT.md](DEVELOPMENT.md) for prerequisites. |
+| InfluxDB       | Uses Flux queries through `@influxdata/influxdb-client`; buckets are exposed as databases and measurements as tables. |
+| Neo4j          | Uses Cypher over `neo4j-driver`; graph labels are exposed as schema entries and query results are normalized for the table grid. |
+| Snowflake      | Uses `snowflake-sdk`; metadata is read from `INFORMATION_SCHEMA` and identifiers are strictly quoted for safety. |
 
 ---
 
@@ -202,7 +208,7 @@ KobeanSQL strictly follows Electron's two-process architecture with `contextIsol
 | Charts         | `recharts` + `react-grid-layout`        | 3 / 2   |
 | Schema diagram | `@xyflow/react` + `@dagrejs/dagre`      | 12 / 3  |
 | Icons          | `lucide-react`                          | 1.16    |
-| DB drivers     | `mysql2`, `pg`, `better-sqlite3`, `mssql`, `mongodb`, `@clickhouse/client`, `cassandra-driver`, `ioredis`, `@elastic/elasticsearch`, `oracledb`| —      |
+| DB drivers     | `mysql2`, `pg`, `better-sqlite3`, `mssql`, `mongodb`, `@clickhouse/client`, `cassandra-driver`, `ioredis`, `@elastic/elasticsearch`, `oracledb`, `@influxdata/influxdb-client`, `neo4j-driver`, `snowflake-sdk`| —      |
 | Logging        | `electron-log`                          | 5       |
 | Tests          | Vitest + Playwright                     | 4 / 1   |
 | Packaging      | electron-builder                        | 26      |
@@ -335,7 +341,7 @@ Fill in the fields:
 | Field        | Description                                                                 |
 |--------------|-----------------------------------------------------------------------------|
 | Name         | A human-readable label for the connection (e.g., `prod-postgres-readonly`)  |
-| Type         | Database engine — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle |
+| Type         | Database engine — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle, InfluxDB, Neo4j, Snowflake |
 | Host         | Hostname or IP address (`127.0.0.1`, `db.example.com`)                      |
 | Port         | Default ports are pre-filled per engine                                     |
 | Database     | Default database / schema to connect to                                     |

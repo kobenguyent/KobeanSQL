@@ -6,7 +6,7 @@
   <title>KobeanSQL – Modern SQL Client</title>
   <meta name="description" content="KobeanSQL is a modern desktop SQL client with multi-database support, schema visualization, metric dashboards, and local-only AI workflows." />
   <meta property="og:title" content="KobeanSQL – Modern SQL Client" />
-  <meta property="og:description" content="Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle with a beautiful glassmorphism interface." />
+  <meta property="og:description" content="Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle, InfluxDB, Neo4j, and Snowflake with a beautiful glassmorphism interface." />
   <meta property="og:type" content="website" />
   <link id="site-favicon" rel="icon" type="image/svg+xml" href="assets/kobeansql-logo-mark-light.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -567,7 +567,7 @@
       <h1>Beautiful SQL<br>for every database</h1>
       <p>
         KobeanSQL is a modern desktop SQL client with an Apple-inspired glassmorphism interface.
-        Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle.
+        Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle, InfluxDB, Neo4j, and Snowflake.
         Visualize schema relationships, build local metric dashboards, and use local-only AI workflows.
       </p>
       <div class="hero-actions">
@@ -584,8 +584,8 @@
     <section class="screenshots">
       <div class="screenshots-grid">
         <div class="screenshot-card">
-          <img src="screenshots/flow-add-connection.png" alt="KobeanSQL add connection flow with successful connection test and save" loading="lazy" />
-          <div class="screenshot-caption">// Add connection flow — test connection successful · save</div>
+          <img src="screenshots/flow-add-connection.png" alt="KobeanSQL add connection flow with categorized database picker and successful connection test before save" loading="lazy" />
+          <div class="screenshot-caption">// Add connection flow — pick DB by category · test connection · save</div>
         </div>
         <div class="screenshots-sub">
           <div class="screenshot-card">
@@ -618,7 +618,7 @@
         <div class="feature-card">
           <span class="feature-icon">🗄️</span>
           <h3>Multi-Database Support</h3>
-          <p>Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, and Oracle from the same app with native drivers.</p>
+          <p>Connect to MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle, InfluxDB, Neo4j, and Snowflake from the same app with native drivers.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🗂️</span>
@@ -790,6 +790,24 @@
           <p>oracledb</p>
           <span class="port">:1521</span>
         </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#22d3ee,#06b6d4)">IF</div>
+          <h3>InfluxDB</h3>
+          <p>@influxdata/influxdb-client</p>
+          <span class="port">:8086</span>
+        </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#00b388,#059669)">N4</div>
+          <h3>Neo4j</h3>
+          <p>neo4j-driver</p>
+          <span class="port">:7687</span>
+        </div>
+        <div class="db-card">
+          <div class="db-dot" style="background:linear-gradient(135deg,#29b5e8,#0284c7)">SF</div>
+          <h3>Snowflake</h3>
+          <p>snowflake-sdk</p>
+          <span class="port">account</span>
+        </div>
       </div>
     </section>
 
@@ -888,7 +906,7 @@
           <thead><tr><th>Field</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>Name</code></td><td>Human-readable label (e.g. <code>prod-postgres-readonly</code>)</td></tr>
-            <tr><td><code>Type</code></td><td>Database engine — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle</td></tr>
+            <tr><td><code>Type</code></td><td>Database engine — MySQL, MariaDB, PostgreSQL, SQLite, SQL Server, MongoDB, CockroachDB, ClickHouse, Cassandra, Redis, Elasticsearch, Oracle, InfluxDB, Neo4j, Snowflake</td></tr>
             <tr><td><code>Host</code></td><td>Hostname or IP address</td></tr>
             <tr><td><code>Port</code></td><td>Default ports are pre-filled per engine</td></tr>
             <tr><td><code>Database</code></td><td>Default database / schema</td></tr>
@@ -1359,6 +1377,9 @@
         <div class="tech-pill">mssql<span>SQL Server</span></div>
         <div class="tech-pill">mongodb<span>MongoDB</span></div>
         <div class="tech-pill">oracledb<span>Oracle</span></div>
+        <div class="tech-pill">@influxdata/influxdb-client<span>InfluxDB</span></div>
+        <div class="tech-pill">neo4j-driver<span>Neo4j</span></div>
+        <div class="tech-pill">snowflake-sdk<span>Snowflake</span></div>
         <div class="tech-pill">Vitest<span>Tests</span></div>
         <div class="tech-pill">semantic-release<span>CI / releases</span></div>
       </div>
