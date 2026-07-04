@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo } from 'react'
 import { X, CheckCircle, AlertCircle, Database } from 'lucide-react'
 import { useAppStore, genId } from '../../store'
-import type { ConnectionConfig, DatabaseType } from '../../types'
-import { DB_DEFAULT_PORTS } from '../../types'
+import type { ConnectionConfig, DatabaseType, DatabaseCategory } from '../../types'
+import { DB_DEFAULT_PORTS, DB_CATEGORY, DB_CATEGORY_LABELS } from '../../types'
 import { parseConnectionUriPreview } from '../../utils/connection-uri'
 import { useTranslation } from '../../hooks/useTranslation'
 
@@ -113,6 +113,32 @@ const DB_LOGOS: Record<string, React.JSX.Element> = {
       <ellipse cx="12" cy="12" rx="10" ry="5" fill="none" stroke="white" strokeWidth="1.5"/>
       <line x1="2" y1="12" x2="22" y2="12" stroke="white" strokeWidth="1.5"/>
     </svg>
+  ),
+  influxdb: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <polyline points="2,18 7,12 10,15 14,8 17,11 22,5" fill="none" stroke="white" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+      <circle cx="22" cy="5" r="1.5"/>
+      <circle cx="2" cy="18" r="1.5"/>
+    </svg>
+  ),
+  neo4j: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <circle cx="6" cy="6" r="3" fill="none" stroke="white" strokeWidth="1.5"/>
+      <circle cx="18" cy="6" r="3" fill="none" stroke="white" strokeWidth="1.5"/>
+      <circle cx="12" cy="18" r="3" fill="none" stroke="white" strokeWidth="1.5"/>
+      <line x1="9" y1="6" x2="15" y2="6" stroke="white" strokeWidth="1.5"/>
+      <line x1="7" y1="8.5" x2="10.5" y2="15.5" stroke="white" strokeWidth="1.5"/>
+      <line x1="17" y1="8.5" x2="13.5" y2="15.5" stroke="white" strokeWidth="1.5"/>
+    </svg>
+  ),
+  snowflake: (
+    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="white">
+      <line x1="12" y1="2" x2="12" y2="22" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+      <line x1="2" y1="12" x2="22" y2="12" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+      <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+      <line x1="19.07" y1="4.93" x2="4.93" y2="19.07" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+      <circle cx="12" cy="12" r="2" fill="white"/>
+    </svg>
   )
 }
 
@@ -122,13 +148,26 @@ const DB_TYPES: { value: DatabaseType; label: string; color: string }[] = [
   { value: 'postgres', label: 'PostgreSQL', color: '#1a1a2e' },
   { value: 'sqlite', label: 'SQLite', color: '#0f80cc' },
   { value: 'mssql', label: 'SQL Server', color: '#f87171' },
-  { value: 'mongodb', label: 'MongoDB', color: '#10b981' },
   { value: 'cockroachdb', label: 'CockroachDB', color: '#6934d4' },
-  { value: 'clickhouse', label: 'ClickHouse', color: '#facc15' },
-  { value: 'cassandra', label: 'Cassandra', color: '#1287b1' },
-  { value: 'redis', label: 'Redis', color: '#dc2626' },
+  { value: 'oracle', label: 'Oracle', color: '#e11d48' },
+  { value: 'mongodb', label: 'MongoDB', color: '#10b981' },
   { value: 'elasticsearch', label: 'Elasticsearch', color: '#f59e0b' },
-  { value: 'oracle', label: 'Oracle', color: '#e11d48' }
+  { value: 'redis', label: 'Redis', color: '#dc2626' },
+  { value: 'cassandra', label: 'Cassandra', color: '#1287b1' },
+  { value: 'influxdb', label: 'InfluxDB', color: '#22d3ee' },
+  { value: 'neo4j', label: 'Neo4j', color: '#00b388' },
+  { value: 'clickhouse', label: 'ClickHouse', color: '#facc15' },
+  { value: 'snowflake', label: 'Snowflake', color: '#29b5e8' }
+]
+
+const DB_CATEGORY_ORDER: DatabaseCategory[] = [
+  'relational',
+  'document',
+  'key-value',
+  'wide-column',
+  'time-series',
+  'graph',
+  'cloud-warehouse'
 ]
 
 const defaultConfig = (): Omit<ConnectionConfig, 'id'> => ({
@@ -274,19 +313,30 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
         <div className="modal-body">
           <div className="form-group">
             <label className="form-label">{t('connection.dbType')}</label>
-            <div className="db-type-grid">
-              {DB_TYPES.map((db) => (
-                <div
-                  key={db.value}
-                  className={`db-type-card ${config.type === db.value ? 'selected' : ''}`}
-                  onClick={() => handleTypeChange(db.value)}
-                >
-                  <div className="db-type-icon" style={{ background: db.color }}>
-                    {DB_LOGOS[db.value]}
+            <div className="db-type-categories">
+              {DB_CATEGORY_ORDER.map((category) => {
+                const categoryDbs = DB_TYPES.filter((db) => DB_CATEGORY[db.value] === category)
+                if (categoryDbs.length === 0) return null
+                return (
+                  <div key={category} className="db-category-group">
+                    <div className="db-category-label">{DB_CATEGORY_LABELS[category]}</div>
+                    <div className="db-type-grid">
+                      {categoryDbs.map((db) => (
+                        <div
+                          key={db.value}
+                          className={`db-type-card ${config.type === db.value ? 'selected' : ''}`}
+                          onClick={() => handleTypeChange(db.value)}
+                        >
+                          <div className="db-type-icon" style={{ background: db.color }}>
+                            {DB_LOGOS[db.value]}
+                          </div>
+                          <span className="db-type-label">{db.label}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <span className="db-type-label">{db.label}</span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
@@ -380,7 +430,13 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
                                   ? '******host:9042/keyspace'
                                   : config.type === 'oracle'
                                     ? '******host:1521/ORCL'
-                                    : '******host:3306/db'
+                                    : config.type === 'influxdb'
+                                      ? 'http://host:8086'
+                                      : config.type === 'neo4j'
+                                        ? 'neo4j://host:7687'
+                                        : config.type === 'snowflake'
+                                          ? 'account.snowflakecomputing.com'
+                                          : '******host:3306/db'
                   }
                 />
                 <div style={{ marginTop: 6, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>

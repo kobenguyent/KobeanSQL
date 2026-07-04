@@ -1371,6 +1371,17 @@ html, body, #root {
 .form-checkbox-label { font-size: var(--font-size-sm); color: var(--text-secondary); }
 
 /* ── DB Type Selector ───────────────────────────────────────── */
+.db-type-categories { display: flex; flex-direction: column; gap: 14px; }
+.db-category-group { display: flex; flex-direction: column; gap: 6px; }
+.db-category-label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-tertiary);
+  padding: 2px 0;
+  border-bottom: 1px solid var(--glass-border);
+}
 .db-type-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
