@@ -1,3 +1,10 @@
+# [1.31.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.30.0...v1.31.0) (2026-07-04)
+
+
+### Features
+
+* add InfluxDB, Neo4j & Snowflake adapters with categorized DB picker UI ([#73](https://github.com/kobenguyent/KobeanSQL/issues/73)) ([b1a12d4](https://github.com/kobenguyent/KobeanSQL/commit/b1a12d480bd4e9ba534fe0805b6f58b57f097b3c))
+
 # [1.30.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.29.0...v1.30.0) (2026-07-03)
 
 
