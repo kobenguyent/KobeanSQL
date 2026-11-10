@@ -92,7 +92,7 @@ describe('Connection Store (persistence)', () => {
         name: 'Secret',
         type: 'postgres',
         host: 'localhost',
-        password: 'super-secret'
+        password: 'super-secret' // betterleaks:allow - test fixture
       }
     ])
 
@@ -113,7 +113,7 @@ describe('Connection Store (persistence)', () => {
     mockSafe.decryptString.mockReturnValueOnce('super-secret')
 
     const { loadConnections, saveConnections } = await import('../../../src/main/store')
-    saveConnections([{ id: 'c1', name: 'Enc', type: 'postgres', host: 'localhost', password: 'super-secret' }])
+    saveConnections([{ id: 'c1', name: 'Enc', type: 'postgres', host: 'localhost', password: 'super-secret' }]) // betterleaks:allow - test fixture
 
     const raw = JSON.parse(fs.readFileSync(storePath, 'utf-8')) as { connections: Array<Record<string, unknown>> }
     // Stored password should carry the enc: prefix, not plaintext
@@ -143,7 +143,7 @@ describe('Connection Store (persistence)', () => {
       storePath,
       JSON.stringify({
         version: 1,
-        connections: [{ id: 'c1', name: 'Broken', type: 'postgres', password: 'enc:invalid-base64' }]
+        connections: [{ id: 'c1', name: 'Broken', type: 'postgres', password: 'enc:invalid-base64' }] // betterleaks:allow - test fixture
       }, null, 2),
       'utf-8'
     )
@@ -155,7 +155,7 @@ describe('Connection Store (persistence)', () => {
 
   it('exportConnectionsToPath omits passwords by default', async () => {
     const { saveConnections, exportConnectionsToPath } = await import('../../../src/main/store')
-    saveConnections([{ id: 'c1', name: 'Secured', type: 'postgres', password: 'secret' }])
+    saveConnections([{ id: 'c1', name: 'Secured', type: 'postgres', password: 'secret' }]) // betterleaks:allow - test fixture
     exportConnectionsToPath(exportPath)
 
     const exported = JSON.parse(fs.readFileSync(exportPath, 'utf-8')) as {
@@ -176,7 +176,7 @@ describe('Connection Store (persistence)', () => {
     mockSafe.encryptString.mockReturnValueOnce(Buffer.from('ENCRYPTED'))
 
     const { saveConnections, exportConnectionsToPath } = await import('../../../src/main/store')
-    saveConnections([{ id: 'c1', name: 'Secured', type: 'postgres', password: 'secret' }])
+    saveConnections([{ id: 'c1', name: 'Secured', type: 'postgres', password: 'secret' }]) // betterleaks:allow - test fixture
     exportConnectionsToPath(exportPath, true)
 
     const exported = JSON.parse(fs.readFileSync(exportPath, 'utf-8')) as {

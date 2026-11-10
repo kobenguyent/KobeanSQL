@@ -132,7 +132,7 @@ describe('MongoDBAdapter', () => {
       host: 'localhost',
       port: 27018,
       user: 'root',
-      password: 'secret'
+      password: 'secret' // betterleaks:allow - test fixture
     })
 
     expect(MongoClient).toHaveBeenCalledWith('mongodb://root:secret@localhost:27018/admin', { // betterleaks:allow - test fixture

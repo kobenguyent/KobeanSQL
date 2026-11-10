@@ -32,7 +32,7 @@ const ja = {
   'connection.host': 'ホスト',
   'connection.port': 'ポート',
   'connection.user': 'ユーザー',
-  'connection.password': 'パスワード',
+  'connection.password': 'パスワード', // betterleaks:allow - i18n UI label
   'connection.database': 'データベース',
   'connection.file': 'データベースファイル',
   'connection.ssl': 'SSLを使用',

@@ -32,7 +32,7 @@ const es = {
   'connection.host': 'Host',
   'connection.port': 'Puerto',
   'connection.user': 'Usuario',
-  'connection.password': 'Contraseña',
+  'connection.password': 'Contraseña', // betterleaks:allow - i18n UI label
   'connection.database': 'Base de datos',
   'connection.file': 'Archivo de base de datos',
   'connection.ssl': 'Usar SSL',

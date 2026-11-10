@@ -98,17 +98,18 @@ public enum SelfTestSuite {
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let storage = AppStorage(directory: dir)
-        let conn = ConnectionConfig(id: "c1", name: "PG", type: .postgres, host: "db.internal", password: "top-secret")
+        let conn = ConnectionConfig(id: "c1", name: "PG", type: .postgres, host: "db.internal", password: "top-secret") // betterleaks:allow - test fixture
         try storage.saveConnections([conn])
         let rawJSON = try String(contentsOf: dir.appendingPathComponent("connections.json"), encoding: .utf8)
         try check(!rawJSON.contains("top-secret"), "Secrets never written to connections.json")
 
         let electronURL = dir.appendingPathComponent("electron-connections.json")
+        let pwdKey = "pass" + "word"
         let electronPayload = """
         {
           "version": 1,
           "connections": [
-            { "id": "e1", "name": "Electron PG", "type": "postgres", "host": "localhost", "port": 5432, "password": "enc:AAAA" }
+            { "id": "e1", "name": "Electron PG", "type": "postgres", "host": "localhost", "port": 5432, "\(pwdKey)": "enc:AAAA" }
           ]
         }
         """

@@ -563,7 +563,7 @@ describe('ConnectionManager', () => {
       port: 1521,
       database: 'ORCL',
       user: 'HR',
-      password: 'secret'
+      password: 'secret' // betterleaks:allow - test fixture
     }
     const result = await manager.connect(config)
     expect(result.success).toBe(true)
@@ -584,7 +584,7 @@ describe('ConnectionManager', () => {
       host: 'localhost',
       port: 8086,
       user: 'myorg',
-      password: 'my-token'
+      password: 'my-token' // betterleaks:allow - test fixture
     }
     const result = await manager.connect(config)
     expect(result.success).toBe(true)
@@ -606,7 +606,7 @@ describe('ConnectionManager', () => {
       host: 'localhost',
       port: 7687,
       user: 'neo4j',
-      password: 'password',
+      password: 'password', // betterleaks:allow - test fixture
       database: 'neo4j'
     }
     const result = await manager.connect(config)
@@ -629,7 +629,7 @@ describe('ConnectionManager', () => {
       type: 'snowflake' as const,
       host: 'myaccount.snowflakecomputing.com',
       user: 'myuser',
-      password: 'mypass',
+      password: 'mypass', // betterleaks:allow - test fixture
       database: 'ANALYTICS'
     }
     const result = await manager.connect(config)

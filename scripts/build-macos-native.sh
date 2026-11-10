@@ -39,8 +39,8 @@ if command -v xcodegen >/dev/null 2>&1 && [ -f "$NATIVE_DIR/project.yml" ]; then
 fi
 
 cd "$NATIVE_DIR"
-swift build -c "$CONFIG" "${CXX_FLAGS[@]}"
-BIN_DIR="$(swift build -c "$CONFIG" "${CXX_FLAGS[@]}" --show-bin-path)"
+swift build -c "$CONFIG" ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"}
+BIN_DIR="$(swift build -c "$CONFIG" ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"} --show-bin-path)"
 BIN_PATH="$BIN_DIR/KobeanSQL"
 
 if [ ! -x "$BIN_PATH" ]; then

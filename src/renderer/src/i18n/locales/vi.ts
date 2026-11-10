@@ -32,7 +32,7 @@ const vi = {
   'connection.host': 'Host',
   'connection.port': 'Cổng',
   'connection.user': 'Người dùng',
-  'connection.password': 'Mật khẩu',
+  'connection.password': 'Mật khẩu', // betterleaks:allow - i18n UI label
   'connection.database': 'Cơ sở dữ liệu',
   'connection.file': 'Tệp cơ sở dữ liệu',
   'connection.ssl': 'Sử dụng SSL',

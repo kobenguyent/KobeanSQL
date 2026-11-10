@@ -4,20 +4,20 @@ import type { ConnectionConfig } from '../../../src/main/db/types'
 
 describe('connection URI parsing', () => {
   it('parses postgres URI', () => {
-    const parsed = parseConnectionUri('postgres', 'postgresql://alice:secret@db.local:5433/app_db?sslmode=require')
+    const parsed = parseConnectionUri('postgres', 'postgresql://alice:secret@db.local:5433/app_db?sslmode=require') // betterleaks:allow - test fixture
 
     expect(parsed).toEqual({
       host: 'db.local',
       port: 5433,
       user: 'alice',
-      password: 'secret',
+      password: 'secret', // betterleaks:allow - test fixture
       database: 'app_db',
       ssl: true
     })
   })
 
   it('parses mysql URI', () => {
-    const parsed = parseConnectionUri('mysql', 'mysql://root:pass@127.0.0.1:3307/test_db')
+    const parsed = parseConnectionUri('mysql', 'mysql://root:pass@127.0.0.1:3307/test_db') // betterleaks:allow - test fixture
 
     expect(parsed).toEqual({
       host: '127.0.0.1',
@@ -61,13 +61,13 @@ describe('connection URI parsing', () => {
       host: 'cluster.example.com',
       port: undefined,
       user: 'alice',
-      password: 'secret',
+      password: 'secret', // betterleaks:allow - test fixture
       database: 'app'
     })
   })
 
   it('throws on invalid scheme for type', () => {
-    expect(() => parseConnectionUri('postgres', 'mysql://root:pass@localhost:3306/db')).toThrow(
+    expect(() => parseConnectionUri('postgres', 'mysql://root:pass@localhost:3306/db')).toThrow( // betterleaks:allow - test fixture
       'Invalid URI scheme for postgres'
     )
   })
@@ -80,7 +80,7 @@ describe('connection URI parsing', () => {
       host: 'localhost',
       port: 5432,
       user: 'local',
-      password: 'local',
+      password: 'local', // betterleaks:allow - test fixture
       database: 'localdb',
       connectionUri: 'postgresql://remote:pw@db.example.com:5439/prod'
     }

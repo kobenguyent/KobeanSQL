@@ -3,7 +3,7 @@ import { parseConnectionUriPreview } from '../../../src/renderer/src/utils/conne
 
 describe('connection URI preview parsing', () => {
   it('returns parsed preview for postgres uri', () => {
-    const result = parseConnectionUriPreview('postgres', 'postgresql://alice:secret@db.local:5432/app_db?sslmode=require')
+    const result = parseConnectionUriPreview('postgres', 'postgresql://alice:secret@db.local:5432/app_db?sslmode=require') // betterleaks:allow - test fixture
     expect(result.error).toBeUndefined()
     expect(result.parsed).toMatchObject({
       host: 'db.local',
@@ -15,7 +15,7 @@ describe('connection URI preview parsing', () => {
   })
 
   it('returns invalid scheme error', () => {
-    const result = parseConnectionUriPreview('postgres', 'mysql://root:pass@localhost:3306/test')
+    const result = parseConnectionUriPreview('postgres', 'mysql://root:pass@localhost:3306/test') // betterleaks:allow - test fixture
     expect(result.error).toContain('Invalid URI scheme for postgres')
   })
 
