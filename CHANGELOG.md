@@ -1,3 +1,10 @@
+# [1.33.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.32.0...v1.33.0) (2026-11-10)
+
+
+### Features
+
+* native app on macos ([b6bf938](https://github.com/kobenguyent/KobeanSQL/commit/b6bf9381dc20078b9be285ab61baec4712f8b915))
+
 # [1.32.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.31.0...v1.32.0) (2026-11-10)
 
 
