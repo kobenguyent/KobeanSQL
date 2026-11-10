@@ -60,6 +60,20 @@ struct MainWindowView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .alert("Confirm Destructive Query", isPresented: Binding(
+            get: { state.pendingDestructiveWarning != nil },
+            set: { if !$0 { state.pendingDestructiveWarning = nil } }
+        )) {
+            Button("Execute Anyway", role: .destructive) {
+                state.pendingDestructiveWarning = nil
+                state.startActiveQuery(confirmedDestructive: true)
+            }
+            Button("Cancel", role: .cancel) {
+                state.pendingDestructiveWarning = nil
+            }
+        } message: {
+            Text(state.pendingDestructiveWarning ?? "")
+        }
     }
 
     private var preferredScheme: ColorScheme? {
@@ -193,26 +207,35 @@ private struct EditorPaneView: View {
         VStack(spacing: 0) {
             // Editor action bar
             HStack(spacing: 10) {
-                Button {
-                    Task { await state.runActiveQuery() }
-                } label: {
-                    if state.activeTab?.isRunning == true {
-                        ProgressView().controlSize(.small)
-                    } else {
+                if state.activeTab?.isRunning == true {
+                    Button(role: .destructive) {
+                        state.cancelActiveQuery()
+                    } label: {
+                        Label("Stop Query", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(GlassTheme.danger)
+                    .controlSize(.small)
+                    .help("Abort running query immediately")
+                } else {
+                    Button {
+                        state.startActiveQuery()
+                    } label: {
                         Label("Run Query (⌘↩)", systemImage: "play.fill")
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(GlassTheme.accent)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.accent)
-                .controlSize(.small)
-                .disabled(state.activeTab?.isRunning == true)
 
                 if let conn = state.activeConnection {
                     Text(conn.type.languageName)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
                         .background(GlassTheme.color(for: conn.type).opacity(0.18), in: Capsule())
+                        .fixedSize(horizontal: true, vertical: false)
                 }
 
                 Toggle("Auto LIMIT 1000", isOn: Binding(
@@ -225,13 +248,35 @@ private struct EditorPaneView: View {
                 ))
                 .toggleStyle(.checkbox)
                 .font(.caption)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
 
-                Spacer()
+                Toggle("Read-Only Safe Mode", isOn: Binding(
+                    get: { state.settings.readOnlyMode },
+                    set: { newValue in
+                        var s = state.settings
+                        s.readOnlyMode = newValue
+                        state.updateSettings(s)
+                    }
+                ))
+                .toggleStyle(.checkbox)
+                .font(.caption)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .help("Blocks all INSERT/UPDATE/DELETE/DDL statements when enabled")
+
+                Spacer(minLength: 8)
+
+                Text("Autocomplete: Type or ⌃Space")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
 
                 Button("Clear") {
                     state.activeTab?.sql = ""
                 }
                 .controlSize(.small)
+                .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -245,7 +290,10 @@ private struct EditorPaneView: View {
                     set: { state.activeTab?.sql = $0 }
                 ),
                 onExecute: {
-                    Task { await state.runActiveQuery() }
+                    state.startActiveQuery()
+                },
+                suggestionsProvider: { prefix, fullSQL in
+                    state.autocompleteSuggestions(prefix: prefix, fullSQL: fullSQL)
                 }
             )
         }

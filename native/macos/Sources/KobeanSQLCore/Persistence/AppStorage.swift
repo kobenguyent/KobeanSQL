@@ -147,19 +147,39 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
 
     public var queryLimit: Int
     public var autoLimitEnabled: Bool
+    public var readOnlyMode: Bool
+    public var confirmDestructiveQueries: Bool
+    public var queryTimeoutSeconds: Int
     public var appearance: AppearanceMode
     public var ai: AISettings
 
     public init(
         queryLimit: Int = 100,
         autoLimitEnabled: Bool = true,
+        readOnlyMode: Bool = false,
+        confirmDestructiveQueries: Bool = true,
+        queryTimeoutSeconds: Int = 30,
         appearance: AppearanceMode = .dark,
         ai: AISettings = AISettings()
     ) {
         self.queryLimit = min(max(queryLimit, 1), 10_000)
         self.autoLimitEnabled = autoLimitEnabled
+        self.readOnlyMode = readOnlyMode
+        self.confirmDestructiveQueries = confirmDestructiveQueries
+        self.queryTimeoutSeconds = min(max(queryTimeoutSeconds, 5), 120)
         self.appearance = appearance
         self.ai = ai
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.queryLimit = min(max((try? c.decode(Int.self, forKey: .queryLimit)) ?? 100, 1), 10_000)
+        self.autoLimitEnabled = (try? c.decode(Bool.self, forKey: .autoLimitEnabled)) ?? true
+        self.readOnlyMode = (try? c.decode(Bool.self, forKey: .readOnlyMode)) ?? false
+        self.confirmDestructiveQueries = (try? c.decode(Bool.self, forKey: .confirmDestructiveQueries)) ?? true
+        self.queryTimeoutSeconds = min(max((try? c.decode(Int.self, forKey: .queryTimeoutSeconds)) ?? 30, 5), 120)
+        self.appearance = (try? c.decode(AppearanceMode.self, forKey: .appearance)) ?? .dark
+        self.ai = (try? c.decode(AISettings.self, forKey: .ai)) ?? AISettings()
     }
 }
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildBulkDeleteRowMutationRequests,
+  buildBulkDuplicateRowMutationRequests,
+  buildBulkInsertRowMutationRequests,
   quoteIdentifierForDb,
   quoteValueForDb,
   buildInlineUpdateSql,
@@ -16,7 +18,11 @@ import {
 import {
   buildInsertSql as buildMainInsertSql,
   buildDeleteSql as buildMainDeleteSql,
-  buildDuplicateSql as buildMainDuplicateSql
+  buildDuplicateSql as buildMainDuplicateSql,
+  buildBulkInsertSql as buildMainBulkInsertSql,
+  buildBulkUpdateSql as buildMainBulkUpdateSql,
+  buildBulkDeleteSql as buildMainBulkDeleteSql,
+  buildBulkDuplicateSql as buildMainBulkDuplicateSql
 } from '../../../src/main/db/mutations/sql-row-mutations'
 import { buildSelectTableSql } from '../../../src/renderer/src/sql/dsl'
 
@@ -109,6 +115,42 @@ describe('ResultsTable Logic', () => {
 
     it('returns null for inserts with no columns to write', () => {
       expect(buildMainInsertSql(target, {})).toBeNull()
+    })
+
+    it('builds bulk INSERT, UPDATE, DELETE, and DUPLICATE SQL statements', () => {
+      const rows = [
+        { id: 1, name: 'Ada', tier: 'pro' },
+        { id: 2, name: 'Grace', tier: 'pro' }
+      ]
+      expect(buildMainBulkInsertSql(target, rows)).toBe(
+        `INSERT INTO "public"."users" ("id", "name", "tier") VALUES (1, 'Ada', 'pro'), (2, 'Grace', 'pro');`
+      )
+      expect(buildMainBulkUpdateSql(target, [...pk], rows, { tier: 'enterprise' })).toBe(
+        `UPDATE "public"."users" SET "tier" = 'enterprise' WHERE "id" IN (1, 2);`
+      )
+      expect(buildMainBulkDeleteSql(target, [...pk], rows)).toBe(
+        `DELETE FROM "public"."users" WHERE "id" IN (1, 2);`
+      )
+      expect(buildMainBulkDuplicateSql(target, rows, [...pk])).toBe(
+        `INSERT INTO "public"."users" ("name", "tier") VALUES ('Ada', 'pro'), ('Grace', 'pro');`
+      )
+      expect(
+        buildBulkInsertRowMutationRequests({
+          connectionId: 'pg-1',
+          tableName: 'users',
+          databaseType: 'postgres',
+          rows: [{ _tempId: '1', name: 'Ada' }]
+        })
+      ).toHaveLength(1)
+      expect(
+        buildBulkDuplicateRowMutationRequests({
+          connectionId: 'pg-1',
+          tableName: 'users',
+          databaseType: 'postgres',
+          pkColumns: [...pk],
+          rows: [{ _tempId: '1', id: 1, name: 'Ada' }]
+        })
+      ).toHaveLength(1)
     })
   })
 

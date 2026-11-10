@@ -206,6 +206,10 @@ public actor DemoSQLDialectDriver: DatabaseDriver {
         try await backing.columns(table: table, database: nil)
     }
 
+    public func foreignKeys(table: TableInfo, database: String?) async throws -> [ForeignKeyInfo] {
+        try await backing.foreignKeys(table: table, database: nil)
+    }
+
     public func serverVersion() async throws -> String {
         switch type {
         case .postgres: "PostgreSQL 16.4 (KobeanSQL Embedded Demo)"

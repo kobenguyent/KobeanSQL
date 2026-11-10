@@ -32,6 +32,55 @@ public enum CellValue: Hashable, Sendable, CustomStringConvertible {
 
     public var isNull: Bool { if case .null = self { true } else { false } }
 
+    /// Fast truncated single-line preview for `NSTableView` cells so huge TEXT/JSON payloads never stall CoreText layout.
+    public func displayPreview(maxLength: Int = 240) -> String {
+        switch self {
+        case .null:
+            return "NULL"
+        case .text(let s):
+            let singleLine = s.replacingOccurrences(of: "\r\n", with: "↵").replacingOccurrences(of: "\n", with: "↵")
+            if singleLine.count <= maxLength { return singleLine }
+            return String(singleLine.prefix(maxLength)) + "…"
+        default:
+            return description
+        }
+    }
+
+    /// Type-aware ordering for sorting result columns (`NULL` values sort last).
+    public static func compare(_ lhs: CellValue, _ rhs: CellValue, ascending: Bool = true) -> Bool {
+        if lhs.isNull && rhs.isNull { return false }
+        if lhs.isNull { return false } // NULL always last
+        if rhs.isNull { return true }
+
+        let ordered: ComparisonResult
+        switch (lhs, rhs) {
+        case (.integer(let a), .integer(let b)):
+            ordered = a < b ? .orderedAscending : (a > b ? .orderedDescending : .orderedSame)
+        case (.double(let a), .double(let b)):
+            ordered = a < b ? .orderedAscending : (a > b ? .orderedDescending : .orderedSame)
+        case (.integer(let a), .double(let b)):
+            let da = Double(a)
+            ordered = da < b ? .orderedAscending : (da > b ? .orderedDescending : .orderedSame)
+        case (.double(let a), .integer(let b)):
+            let db = Double(b)
+            ordered = a < db ? .orderedAscending : (a > db ? .orderedDescending : .orderedSame)
+        case (.bool(let a), .bool(let b)):
+            ordered = (a == b) ? .orderedSame : (!a && b ? .orderedAscending : .orderedDescending)
+        case (.blob(let a), .blob(let b)):
+            ordered = a < b ? .orderedAscending : (a > b ? .orderedDescending : .orderedSame)
+        default:
+            let sa = lhs.description
+            let sb = rhs.description
+            if let na = Double(sa), let nb = Double(sb) {
+                ordered = na < nb ? .orderedAscending : (na > nb ? .orderedDescending : .orderedSame)
+            } else {
+                ordered = sa.localizedStandardCompare(sb)
+            }
+        }
+        if ordered == .orderedSame { return false }
+        return ascending ? (ordered == .orderedAscending) : (ordered == .orderedDescending)
+    }
+
     /// JSON-compatible representation for exports.
     public var jsonValue: Any {
         switch self {
@@ -98,6 +147,21 @@ public struct ColumnInfo: Hashable, Sendable, Identifiable {
         self.nullable = nullable
         self.primaryKey = primaryKey
         self.defaultValue = defaultValue
+    }
+}
+
+public struct ForeignKeyInfo: Hashable, Sendable, Identifiable {
+    public var columnName: String
+    public var referencedTable: String
+    public var referencedSchema: String?
+    public var referencedColumn: String
+    public var id: String { "\(columnName)->\(referencedSchema ?? "").\(referencedTable).\(referencedColumn)" }
+
+    public init(columnName: String, referencedTable: String, referencedSchema: String? = nil, referencedColumn: String = "id") {
+        self.columnName = columnName
+        self.referencedTable = referencedTable
+        self.referencedSchema = referencedSchema
+        self.referencedColumn = referencedColumn
     }
 }
 

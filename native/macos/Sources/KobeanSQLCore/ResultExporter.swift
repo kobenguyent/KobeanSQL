@@ -28,4 +28,22 @@ public enum ResultExporter {
         lines += rows.map { $0.map { $0.isNull ? "" : $0.description.replacingOccurrences(of: "\t", with: " ") }.joined(separator: "\t") }
         return lines.joined(separator: "\n")
     }
+
+    /// Exports rows as a multi-row SQL `INSERT INTO ... VALUES ...;` statement.
+    public static func sqlInserts(
+        table: TableInfo,
+        dialect: DatabaseType,
+        isDemo: Bool = false,
+        columns: [ColumnDef],
+        rows: [[CellValue]]
+    ) -> String {
+        guard !columns.isEmpty, !rows.isEmpty else { return "" }
+        return (try? RowMutator.buildBulkInsertSQL(
+            table: table,
+            dialect: dialect,
+            isDemo: isDemo,
+            columns: columns.map(\.name),
+            rows: rows
+        )) ?? ""
+    }
 }

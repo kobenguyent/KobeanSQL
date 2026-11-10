@@ -122,7 +122,7 @@ struct SettingsSheetView: View {
             Divider()
 
             Form {
-                Section("Query Execution & Safety Guards") {
+                Section("Query Execution, Deadlock & Safety Guards") {
                     HStack {
                         Text("Table Preview Row Limit")
                         Spacer()
@@ -130,8 +130,17 @@ struct SettingsSheetView: View {
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 90)
                     }
+                    HStack {
+                        Text("Query Execution Timeout (seconds)")
+                        Spacer()
+                        TextField("30", value: $draft.queryTimeoutSeconds, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 90)
+                    }
                     Toggle("Auto-append LIMIT 1000 to unbounded SELECT queries", isOn: $draft.autoLimitEnabled)
-                    Text("Result sets are always capped at 10,000 rows with a 30s execution timeout and max 5 connections per pool.")
+                    Toggle("Confirm before executing destructive queries (DROP, TRUNCATE, DELETE/UPDATE without WHERE)", isOn: $draft.confirmDestructiveQueries)
+                    Toggle("Read-Only Safe Mode (block all write & DDL queries)", isOn: $draft.readOnlyMode)
+                    Text("Result sets are capped at 10,000 rows, SQLite runs in WAL mode with busy_timeout + progress interrupt, and connection pools are capped at 5.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

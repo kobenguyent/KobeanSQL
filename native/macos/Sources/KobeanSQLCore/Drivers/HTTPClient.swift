@@ -14,7 +14,9 @@ final class HTTPClient: NSObject, URLSessionDelegate, @unchecked Sendable {
     private let allowSelfSigned: Bool
     private lazy var session: URLSession = {
         let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = QueryGuard.queryTimeout
+        cfg.timeoutIntervalForRequest = QueryGuard.connectTimeout
+        cfg.timeoutIntervalForResource = QueryGuard.queryTimeout
+        cfg.waitsForConnectivity = false
         cfg.httpMaximumConnectionsPerHost = 5
         return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
     }()

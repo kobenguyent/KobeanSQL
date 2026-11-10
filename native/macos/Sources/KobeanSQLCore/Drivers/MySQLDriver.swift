@@ -128,6 +128,26 @@ public actor MySQLDriver: DatabaseDriver {
         }
     }
 
+    public func foreignKeys(table: TableInfo, database: String?) async throws -> [ForeignKeyInfo] {
+        let db = table.schema ?? database ?? currentDatabase ?? ""
+        let sql = """
+        SELECT COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+        FROM information_schema.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = \(SQLIdent.literal(db))
+          AND TABLE_NAME = \(SQLIdent.literal(table.name))
+          AND REFERENCED_TABLE_NAME IS NOT NULL
+        """
+        return try await execute(sql, database: nil).rows.compactMap { r in
+            guard r.count >= 4 else { return nil }
+            return ForeignKeyInfo(
+                columnName: r[0].description,
+                referencedTable: r[2].description,
+                referencedSchema: r[1].description,
+                referencedColumn: r[3].description
+            )
+        }
+    }
+
     public func serverVersion() async throws -> String {
         try await execute("SELECT VERSION()", database: nil).rows.first?.first?.description ?? "unknown"
     }

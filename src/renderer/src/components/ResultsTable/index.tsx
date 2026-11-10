@@ -63,6 +63,14 @@ interface BulkDeleteRowMutationRequestParams extends Omit<DeleteRowMutationReque
   rows: Record<string, unknown>[]
 }
 
+interface BulkDuplicateRowMutationRequestParams extends Omit<DuplicateRowMutationRequest, 'rowData'> {
+  rows: Record<string, unknown>[]
+}
+
+interface BulkInsertRowMutationRequestParams extends Omit<InsertRowMutationRequest, 'rowData'> {
+  rows: Record<string, unknown>[]
+}
+
 function sanitizeRowMutationData(rowData: Record<string, unknown>): Record<string, unknown> {
   const { _tempId: _ignoredTempId, ...sanitizedRowData } = rowData as Record<string, unknown> & { _tempId?: unknown }
   return sanitizedRowData
@@ -75,6 +83,16 @@ export function buildInsertRowMutationRequest(
     ...request,
     rowData: sanitizeRowMutationData(request.rowData)
   }
+}
+
+export function buildBulkInsertRowMutationRequests(
+  request: BulkInsertRowMutationRequestParams
+): InsertRowMutationRequest[] {
+  const { rows, ...sharedRequest } = request
+  return rows.map((rowData) => buildInsertRowMutationRequest({
+    ...sharedRequest,
+    rowData
+  }))
 }
 
 export function buildDeleteRowMutationRequest(
@@ -93,6 +111,16 @@ export function buildDuplicateRowMutationRequest(
     ...request,
     rowData: sanitizeRowMutationData(request.rowData)
   }
+}
+
+export function buildBulkDuplicateRowMutationRequests(
+  request: BulkDuplicateRowMutationRequestParams
+): DuplicateRowMutationRequest[] {
+  const { rows, ...sharedRequest } = request
+  return rows.map((rowData) => buildDuplicateRowMutationRequest({
+    ...sharedRequest,
+    rowData
+  }))
 }
 
 export function buildBulkDeleteRowMutationRequests(
@@ -488,7 +516,9 @@ function ContextMenu({
   y,
   selectedCount,
   canDelete,
+  canDuplicate,
   onDelete,
+  onDuplicate,
   onCopy,
   onClose
 }: {
@@ -496,7 +526,9 @@ function ContextMenu({
   y: number
   selectedCount: number
   canDelete: boolean
+  canDuplicate?: boolean
   onDelete: () => void
+  onDuplicate?: () => void
   onCopy: () => void
   onClose: () => void
 }): React.JSX.Element {
@@ -508,7 +540,7 @@ function ContextMenu({
     const vw = window.innerWidth
     const vh = window.innerHeight
     const menuW = 220
-    const menuH = 90
+    const menuH = 120
     return {
       left: x + menuW > vw ? x - menuW : x,
       top: y + menuH > vh ? y - menuH : y
@@ -529,6 +561,15 @@ function ContextMenu({
         <Copy size={12} />
         <span>Copy Row Data{selectedCount > 1 ? ` (${selectedCount})` : ''}</span>
       </button>
+      {canDuplicate && onDuplicate && (
+        <button
+          className="ctx-menu-item"
+          onClick={() => { onDuplicate(); onClose() }}
+        >
+          <Plus size={12} />
+          <span>Duplicate Selected Row{selectedCount !== 1 ? 's' : ''} ({selectedCount})</span>
+        </button>
+      )}
       {canDelete && (
         <>
           <div className="ctx-menu-separator" />
@@ -854,6 +895,36 @@ export function ResultsTable({
       return buildDeleteMongoQuery(row, pkColumns, tableName!)
     }
     return buildDeleteSql(row, pkColumns, tableName!, database, schema, conn?.type)
+  }
+
+  async function handleDuplicateSelected(rows: { index: number; original: Record<string, unknown> }[]) {
+    if (!actionAvailability.canDuplicateRow || !connectionId || !tableName || !conn) {
+      showTableError('Duplicate row is not supported for this connection or table.')
+      return
+    }
+    const selectedRowData = getSelectedVisibleRows(rows, selectedRows).map((row) => row.original)
+    const requests = buildBulkDuplicateRowMutationRequests({
+      connectionId,
+      tableName,
+      database,
+      schema,
+      databaseType: conn.type,
+      pkColumns,
+      rows: selectedRowData
+    })
+    try {
+      for (const req of requests) {
+        const res = await window.db.duplicateRow(req)
+        if (!res.success) {
+          showTableError(getMutationResultErrorMessage('duplicate', res))
+          return
+        }
+      }
+      showTableSuccess(`Duplicated ${requests.length} row${requests.length !== 1 ? 's' : ''} successfully.`)
+      onRefresh?.()
+    } catch (err) {
+      showTableError(`Error duplicating rows: ${(err as Error).message}`)
+    }
   }
 
   function handleDeleteSelected(rows: { index: number; original: Record<string, unknown> }[]) {
@@ -1433,10 +1504,20 @@ export function ResultsTable({
         {selCount > 0 && (
           <span className="selection-badge">
             {selCount} selected
+            {actionAvailability.canDuplicateRow && (
+              <button
+                className="icon-btn"
+                style={{ marginLeft: 6 }}
+                title={`Duplicate ${selCount} row${selCount !== 1 ? 's' : ''}`}
+                onClick={() => { void handleDuplicateSelected(filteredRows) }}
+              >
+                <Plus size={11} />
+              </button>
+            )}
             {actionAvailability.canBulkDelete && (
               <button
                 className="icon-btn icon-btn-danger"
-                style={{ marginLeft: 6 }}
+                style={{ marginLeft: 4 }}
                 title={`Delete ${selCount} row${selCount !== 1 ? 's' : ''}`}
                 onClick={() => handleDeleteSelected(filteredRows)}
               >
@@ -1713,7 +1794,9 @@ export function ResultsTable({
           y={contextMenu.y}
           selectedCount={selCount}
           canDelete={actionAvailability.canBulkDelete}
+          canDuplicate={actionAvailability.canDuplicateRow}
           onDelete={() => handleDeleteSelected(filteredRows)}
+          onDuplicate={() => { void handleDuplicateSelected(filteredRows) }}
           onCopy={() => copyRowsData(filteredRows)}
           onClose={() => setContextMenu(null)}
         />

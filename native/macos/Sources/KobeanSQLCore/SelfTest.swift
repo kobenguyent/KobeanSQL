@@ -47,6 +47,26 @@ public enum SelfTestSuite {
         try check(capped.rows.count == 10_000, "Cap rows at 10,000")
         try check(capped.notice?.contains("10000") == true, "Attach truncation notice")
 
+        // 3b. Read-Only Safe Mode, Destructive Risk Guard, Secret Redaction & CellValue Sort/Preview
+        try check(!QueryGuard.isWriteOrDDL("SELECT * FROM users", type: .postgres), "SELECT is read-only")
+        try check(QueryGuard.isWriteOrDDL("UPDATE users SET active = 0 WHERE id = 1", type: .postgres), "UPDATE is write")
+        try check(QueryGuard.isWriteOrDDL("SET session:1 'ok'", type: .redis), "Redis SET is write")
+        try check(!QueryGuard.isWriteOrDDL("GET session:1", type: .redis), "Redis GET is read-only")
+
+        try check(QueryGuard.detectDestructiveRisk("DELETE FROM users;", type: .postgres) != nil, "Detect DELETE without WHERE")
+        try check(QueryGuard.detectDestructiveRisk("DELETE FROM users WHERE id = 1;", type: .postgres) == nil, "Allow DELETE with WHERE")
+        try check(QueryGuard.detectDestructiveRisk("DROP TABLE users;", type: .postgres) != nil, "Detect DROP TABLE")
+        try check(QueryGuard.detectDestructiveRisk("FLUSHDB", type: .redis) != nil, "Detect Redis FLUSHDB")
+
+        let redacted = QueryGuard.redactSecrets("ALTER USER alice WITH PASSWORD 'my-secret-pass';") // betterleaks:allow - test fixture
+        try check(!redacted.contains("my-secret-pass") && redacted.contains("'***'"), "Redact inline SQL secret")
+
+        try check(CellValue.compare(.integer(2), .integer(10), ascending: true), "Numeric ascending sort")
+        try check(CellValue.compare(.integer(10), .integer(2), ascending: false), "Numeric descending sort")
+        try check(CellValue.compare(.text("alpha"), .null, ascending: true), "NULLs sorted last")
+        let longCell = CellValue.text(String(repeating: "x", count: 500))
+        try check(longCell.displayPreview(maxLength: 240).count == 241, "Truncate long cell preview")
+
         // 4. StatementSplitter
         let script = """
         -- header comment
@@ -76,20 +96,24 @@ public enum SelfTestSuite {
 
         let sqlScript = """
         CREATE TABLE items (id INTEGER PRIMARY KEY, title TEXT NOT NULL, price REAL DEFAULT 9.99);
+        CREATE TABLE reviews (id INTEGER PRIMARY KEY, item_id INTEGER NOT NULL REFERENCES items(id), rating INTEGER NOT NULL);
         INSERT INTO items (title, price) VALUES ('MacBook Pro', 2499.0), ('Magic Trackpad', 129.0);
         SELECT id, title, price FROM items ORDER BY id;
         """
         let results = try await manager.run(sqlScript, connectionID: config.id, type: .sqlite, database: "main")
-        try check(results.count == 3, "Executed 3 SQLite statements")
-        try check(results[2].rows.count == 2, "Returned 2 rows")
-        try check(results[2].rows[0][1] == .text("MacBook Pro"), "First row title")
-        try check(results[2].executedQuery.hasSuffix("LIMIT 1000"), "Auto-LIMIT applied")
+        try check(results.count == 4, "Executed 4 SQLite statements")
+        try check(results[3].rows.count == 2, "Returned 2 rows")
+        try check(results[3].rows[0][1] == .text("MacBook Pro"), "First row title")
+        try check(results[3].executedQuery.hasSuffix("LIMIT 1000"), "Auto-LIMIT applied")
 
         let tables = try await manager.tables(config.id, database: "main")
-        try check(tables.map(\.name) == ["items"], "Introspected SQLite tables")
+        try check(tables.map(\.name) == ["items", "reviews"], "Introspected SQLite tables")
 
         let cols = try await manager.columns(config.id, table: tables[0], database: "main")
         try check(cols.count == 3 && cols[0].name == "id" && cols[0].primaryKey, "Introspected SQLite columns")
+
+        let fks = try await manager.foreignKeys(config.id, table: tables[1], database: "main")
+        try check(fks.count == 1 && fks[0].columnName == "item_id" && fks[0].referencedTable == "items" && fks[0].referencedColumn == "id", "Introspected SQLite foreign keys")
         await manager.disconnect(config.id)
 
         // 6. AppStorage & Electron Import
@@ -149,6 +173,53 @@ public enum SelfTestSuite {
 
         let copySQL = try RowMutator.buildCopyTableSQL(source: tbl, targetName: "customers_backup", mode: .schemaAndData, dialect: .sqlite, isDemo: true)
         try check(copySQL == ["CREATE TABLE \"customers_backup\" AS SELECT * FROM \"customers\";"], "Copy Table SQL: \(copySQL)")
+
+        // 9b. Bulk CRUD SQL generation & CSV/JSON parsing
+        let bulkIns = try RowMutator.buildBulkInsertSQL(
+            table: tbl,
+            dialect: .postgres,
+            isDemo: true,
+            columns: ["name", "tier"],
+            rows: [[.text("Ada"), .text("enterprise")], [.text("Grace"), .text("pro")]]
+        )
+        try check(bulkIns.contains("VALUES\n  ('Ada', 'enterprise'),\n  ('Grace', 'pro');"), "Bulk Insert SQL: \(bulkIns)")
+
+        let bulkUpd = try RowMutator.buildBulkUpdateSQL(
+            table: tbl,
+            dialect: .postgres,
+            isDemo: true,
+            columns: crudCols,
+            pkColumnNames: ["id"],
+            targetRows: [[.integer(1), .text("Ada"), .text("pro")], [.integer(2), .text("Grace"), .text("pro")]],
+            updatedValues: [("tier", .text("enterprise"))]
+        )
+        try check(bulkUpd == "UPDATE \"customers\" SET \"tier\" = 'enterprise' WHERE \"id\" IN (1, 2);", "Bulk Update SQL: \(bulkUpd)")
+
+        let bulkDel = try RowMutator.buildBulkDeleteSQL(
+            table: tbl,
+            dialect: .postgres,
+            isDemo: true,
+            columns: crudCols,
+            pkColumnNames: ["id"],
+            rows: [[.integer(10), .text("Ada"), .text("pro")], [.integer(20), .text("Grace"), .text("pro")]]
+        )
+        try check(bulkDel == "DELETE FROM \"customers\" WHERE \"id\" IN (10, 20);", "Bulk Delete SQL: \(bulkDel)")
+
+        let bulkDup = try RowMutator.buildBulkDuplicateSQL(
+            table: tbl,
+            dialect: .postgres,
+            isDemo: true,
+            columns: crudCols,
+            pkColumnNames: ["id"],
+            rows: [[.integer(1), .text("Ada"), .text("enterprise")], [.integer(2), .text("Grace"), .text("pro")]]
+        )
+        try check(bulkDup.contains("(\"name\", \"tier\") VALUES\n  ('Ada', 'enterprise'),\n  ('Grace', 'pro');"), "Bulk Duplicate SQL: \(bulkDup)")
+
+        let parsedCSV = try RowMutator.parseBulkDelimited("name,tier\nAlan,pro\nMargaret,enterprise", tableColumns: crudCols)
+        try check(parsedCSV.columns == ["name", "tier"] && parsedCSV.rows.count == 2, "Parsed Bulk CSV")
+
+        let parsedJSON = try RowMutator.parseBulkJSON("[{\"name\":\"Ken\",\"tier\":\"pro\"},{\"name\":\"Dennis\",\"tier\":\"enterprise\"}]", tableColumns: crudCols)
+        try check(parsedJSON.columns == ["name", "tier"] && parsedJSON.rows.count == 2, "Parsed Bulk JSON")
 
         // 10. All Built-in Multi-Engine Demo Drivers (Postgres, MySQL, ClickHouse, Redis, Elasticsearch, Neo4j, InfluxDB)
         for preset in DemoDatabaseCatalog.presets where preset.type != .sqlite {

@@ -48,17 +48,19 @@ public actor ConnectionManager {
     /// Runs every statement in `text` sequentially and returns one result per statement.
     /// Stops at the first failure (earlier results are kept on the returned error).
     public func run(_ text: String, connectionID id: String, type: DatabaseType, database: String?,
-                    autoLimit: Bool = true) async throws -> [QueryResult] {
+                    autoLimit: Bool = true, timeout: TimeInterval = QueryGuard.queryTimeout) async throws -> [QueryResult] {
         let driver = try driver(id)
         let statements = StatementSplitter.split(text, type: type)
         guard !statements.isEmpty else { throw DatabaseError("Nothing to run") }
+        let effectiveTimeout = max(5, min(timeout, 300))
         var results: [QueryResult] = []
         for statement in statements {
+            try Task.checkCancellation()
             let sql = autoLimit ? QueryGuard.applySafetyLimit(statement, type: type) : statement
             do {
                 var result = try await QueryGuard.withTimeout(
-                    QueryGuard.queryTimeout,
-                    message: "Query timed out after \(Int(QueryGuard.queryTimeout))s"
+                    effectiveTimeout,
+                    message: "Query timed out after \(Int(effectiveTimeout))s (aborted to prevent DB/UI hang)"
                 ) { try await driver.execute(sql, database: database) }
                 result.executedQuery = sql
                 if sql != statement {
@@ -83,6 +85,10 @@ public actor ConnectionManager {
 
     public func columns(_ id: String, table: TableInfo, database: String?) async throws -> [ColumnInfo] {
         try await driver(id).columns(table: table, database: database)
+    }
+
+    public func foreignKeys(_ id: String, table: TableInfo, database: String?) async throws -> [ForeignKeyInfo] {
+        try await driver(id).foreignKeys(table: table, database: database)
     }
 
     public func previewQuery(_ id: String, table: TableInfo, database: String?, limit: Int) async throws -> String {

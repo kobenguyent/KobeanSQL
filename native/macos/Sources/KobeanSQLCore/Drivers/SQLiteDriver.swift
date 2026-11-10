@@ -21,18 +21,40 @@ public actor SQLiteDriver: DatabaseDriver {
             sqlite3_close(handle)
             throw DatabaseError("Unable to open \(expanded): \(msg)")
         }
-        sqlite3_busy_timeout(handle, Int32(QueryGuard.queryTimeout * 1000))
+        sqlite3_busy_timeout(handle, 5000)
+        // Enable WAL journal mode & foreign keys to prevent reader/writer deadlocks and SQLITE_BUSY stalls
+        sqlite3_exec(handle, "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;", nil, nil, nil)
         db = handle
     }
 
     public func disconnect() async {
-        if let db { sqlite3_close_v2(db) }
+        if let db {
+            sqlite3_interrupt(db)
+            sqlite3_close_v2(db)
+        }
         db = nil
     }
 
     public func execute(_ query: String, database: String?) async throws -> QueryResult {
         guard let db else { throw DatabaseError("Not connected") }
+        try Task.checkCancellation()
         let start = Date()
+        let deadline = start.addingTimeInterval(QueryGuard.queryTimeout)
+
+        // Install a lightweight progress callback so runaway queries (e.g. cartesian joins / recursive CTEs)
+        // abort at the C engine level if the deadline expires.
+        let deadlineBox = UnsafeMutablePointer<Double>.allocate(capacity: 1)
+        deadlineBox.initialize(to: deadline.timeIntervalSince1970)
+        sqlite3_progress_handler(db, 2000, { ctx -> Int32 in
+            guard let ptr = ctx?.assumingMemoryBound(to: Double.self) else { return 0 }
+            return Date().timeIntervalSince1970 > ptr.pointee ? 1 : 0
+        }, deadlineBox)
+        defer {
+            sqlite3_progress_handler(db, 0, nil, nil)
+            deadlineBox.deinitialize(count: 1)
+            deadlineBox.deallocate()
+        }
+
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
             throw DatabaseError(String(cString: sqlite3_errmsg(db)))
@@ -47,8 +69,15 @@ public actor SQLiteDriver: DatabaseDriver {
 
         var rows: [[CellValue]] = []
         while true {
+            if Task.isCancelled {
+                sqlite3_interrupt(db)
+                throw CancellationError()
+            }
             let rc = sqlite3_step(stmt)
             if rc == SQLITE_DONE { break }
+            if rc == SQLITE_INTERRUPT {
+                throw DatabaseError("Query was cancelled or timed out.")
+            }
             guard rc == SQLITE_ROW else { throw DatabaseError(String(cString: sqlite3_errmsg(db))) }
             // Stop reading early instead of materialising huge result sets.
             if rows.count > QueryGuard.maxRows { break }
@@ -90,6 +119,18 @@ public actor SQLiteDriver: DatabaseDriver {
             ColumnInfo(name: r[1].description, type: r[2].description,
                        nullable: r[3].description == "0", primaryKey: r[5].description != "0",
                        defaultValue: r[4].isNull ? nil : r[4].description)
+        }
+    }
+
+    public func foreignKeys(table: TableInfo, database: String?) async throws -> [ForeignKeyInfo] {
+        let result = try await execute("PRAGMA foreign_key_list(\(SQLIdent.quote(table.name)))", database: nil)
+        // id, seq, table, from, to, on_update, on_delete, match
+        return result.rows.compactMap { r in
+            guard r.count >= 5 else { return nil }
+            let colName = r[3].description
+            let refTable = r[2].description
+            let refCol = (r[4].isNull || r[4].description.isEmpty) ? "id" : r[4].description
+            return ForeignKeyInfo(columnName: colName, referencedTable: refTable, referencedSchema: table.schema, referencedColumn: refCol)
         }
     }
 

@@ -27,6 +27,23 @@ enum StatusLevel {
     case info, success, warning, error
 }
 
+struct CompletionSuggestion: Identifiable, Hashable {
+    enum Kind: String {
+        case database = "DB"
+        case table = "TABLE"
+        case view = "VIEW"
+        case column = "COL"
+        case keyword = "KW"
+        case function = "FN"
+    }
+
+    var insertText: String
+    var displayText: String
+    var kind: Kind
+    var detail: String
+    var id: String { "\(kind.rawValue)::\(insertText)::\(detail)" }
+}
+
 @Observable
 @MainActor
 final class AppState {
@@ -44,9 +61,12 @@ final class AppState {
     var selectedDatabaseByConnection: [String: String] = [:]
     var tablesByScope: [String: [TableInfo]] = [:]
     var columnsByTableKey: [String: [ColumnInfo]] = [:]
+    var foreignKeysByTableKey: [String: [ForeignKeyInfo]] = [:]
 
     var tabs: [QueryTab] = []
     var activeTabID: UUID = UUID()
+    var runningTasks: [UUID: Task<Void, Never>] = [:]
+    var pendingDestructiveWarning: String?
 
     var history: [HistoryEntry] = []
     var savedQueries: [SavedQuery] = []
@@ -199,10 +219,38 @@ final class AppState {
     }
 
     func disconnect(_ id: String) async {
+        // Cancel any running queries on tabs belonging to this connection
+        for tab in tabs where tab.connectionID == id {
+            runningTasks[tab.id]?.cancel()
+            runningTasks.removeValue(forKey: tab.id)
+        }
         await manager.disconnect(id)
         connectedIDs.remove(id)
         serverVersions.removeValue(forKey: id)
-        setStatus("Disconnected", level: .info)
+
+        // Close all open query tabs belonging to the disconnected database
+        let closedCount = tabs.filter { $0.connectionID == id }.count
+        tabs.removeAll { $0.connectionID == id }
+
+        if tabs.isEmpty {
+            let fallbackConn = connections.first { connectedIDs.contains($0.id) }
+            let fallbackDB = fallbackConn.flatMap { selectedDatabaseByConnection[$0.id] ?? $0.database }
+            let placeholder = QueryTab(
+                title: fallbackConn.map { "\($0.name)" } ?? "Query 1",
+                connectionID: fallbackConn?.id,
+                database: fallbackDB,
+                activeTable: nil,
+                sql: fallbackConn != nil
+                    ? "-- Connected to \(fallbackConn!.name). Press ⌘↩ to run a query.\n"
+                    : "-- Disconnected from database. Connect to a database in the sidebar to begin querying.\n"
+            )
+            tabs = [placeholder]
+            activeTabID = placeholder.id
+        } else if !tabs.contains(where: { $0.id == activeTabID }) {
+            activeTabID = tabs[0].id
+        }
+
+        setStatus(closedCount > 0 ? "Disconnected and closed \(closedCount) open tab(s)" : "Disconnected", level: .info)
     }
 
     func selectDatabase(_ db: String, for connectionID: String) async {
@@ -228,6 +276,11 @@ final class AppState {
         do {
             let list = try await manager.tables(connectionID, database: database)
             tablesByScope[key] = list
+            // Preload column & foreign key metadata for the first 25 tables so autocomplete and FK navigation work immediately
+            for table in list.prefix(25) where table.kind == .table {
+                await loadColumns(for: table, connectionID: connectionID)
+                await loadForeignKeys(for: table, connectionID: connectionID)
+            }
         } catch {
             setStatus("Failed to load schema: \(error.localizedDescription)", level: .warning)
         }
@@ -247,6 +300,75 @@ final class AppState {
         }
     }
 
+    func loadForeignKeys(for table: TableInfo, connectionID: String) async {
+        let db = selectedDatabaseByConnection[connectionID]
+        let key = "\(connectionID)::\(db ?? "")::\(table.id)"
+        if foreignKeysByTableKey[key] != nil { return }
+        if let fks = try? await manager.foreignKeys(connectionID, table: table, database: db) {
+            foreignKeysByTableKey[key] = fks
+        }
+    }
+
+    /// Returns introspected foreign keys plus schema-aware `<table_prefix>_id` foreign keys.
+    func foreignKeys(for table: TableInfo, connectionID: String) -> [ForeignKeyInfo] {
+        let db = selectedDatabaseByConnection[connectionID] ?? ""
+        let explicit = foreignKeysByTableKey["\(connectionID)::\(db)::\(table.id)"] ?? []
+        var byColumn = Dictionary(uniqueKeysWithValues: explicit.map { ($0.columnName.lowercased(), $0) })
+
+        let knownTables = tables(for: connectionID).filter { $0.kind == .table }
+        let tableCols = columns(for: table, connectionID: connectionID).map(\.name)
+        let activeResultCols = activeTab?.activeResult?.columns.map(\.name) ?? []
+        let allColNames = Array(Set(tableCols + activeResultCols))
+
+        for colName in allColNames {
+            let lower = colName.lowercased()
+            guard byColumn[lower] == nil, lower.hasSuffix("_id"), lower.count > 3 else { continue }
+            let stem = String(lower.dropLast(3)) // e.g. "customer", "org", "warehouse"
+            if let matched = knownTables.first(where: { t in
+                let tn = t.name.lowercased()
+                return tn == stem || tn == stem + "s" || tn == stem + "es" || (stem == "org" && tn.hasPrefix("organization"))
+            }), matched.name.caseInsensitiveCompare(table.name) != .orderedSame {
+                let fk = ForeignKeyInfo(
+                    columnName: colName,
+                    referencedTable: matched.name,
+                    referencedSchema: matched.schema,
+                    referencedColumn: "id"
+                )
+                byColumn[lower] = fk
+            }
+        }
+        return Array(byColumn.values)
+    }
+
+    /// Navigates to the parent table and filters by the clicked foreign key's primary key value.
+    func followForeignKey(_ fk: ForeignKeyInfo, value: CellValue) async {
+        guard !value.isNull, let conn = activeConnection else { return }
+        let db = activeTab?.database ?? selectedDatabaseByConnection[conn.id]
+        let isDemo = DemoDatabaseCatalog.isDemo(conn)
+        let knownTables = tables(for: conn.id)
+        let targetTable = knownTables.first { $0.name.caseInsensitiveCompare(fk.referencedTable) == .orderedSame }
+            ?? TableInfo(name: fk.referencedTable, kind: .table, schema: fk.referencedSchema ?? db)
+
+        await loadColumns(for: targetTable, connectionID: conn.id)
+        await loadForeignKeys(for: targetTable, connectionID: conn.id)
+
+        let qualifiedTable = RowMutator.qualifyTable(targetTable, dialect: conn.type, isDemo: isDemo)
+        let quotedPK = RowMutator.quoteIdentifier(fk.referencedColumn, dialect: conn.type)
+        let quotedVal = RowMutator.quoteLiteral(value, dialect: conn.type)
+        let sql = "SELECT * FROM \(qualifiedTable) WHERE \(quotedPK) = \(quotedVal) LIMIT \(settings.queryLimit);"
+
+        if let idx = activeTabIndex {
+            tabs[idx].activeTable = targetTable
+            tabs[idx].title = targetTable.name
+            tabs[idx].sql = sql
+        } else {
+            newTab(title: targetTable.name, connectionID: conn.id, database: db, sql: sql)
+            activeTab?.activeTable = targetTable
+        }
+        await runActiveQuery()
+        setStatus("Followed foreign key \(fk.columnName) → \(targetTable.name).\(fk.referencedColumn) = \(value.description)", level: .info)
+    }
+
     // MARK: - Tabs & Query Execution
 
     func newTab(title: String? = nil, connectionID: String? = nil, database: String? = nil, sql: String = "") {
@@ -263,6 +385,8 @@ final class AppState {
     }
 
     func closeTab(_ id: UUID) {
+        runningTasks[id]?.cancel()
+        runningTasks.removeValue(forKey: id)
         guard tabs.count > 1, let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
         tabs.remove(at: idx)
         if activeTabID == id {
@@ -273,6 +397,7 @@ final class AppState {
     func previewTable(_ table: TableInfo, connectionID: String, inNewTab: Bool = false) async {
         let db = selectedDatabaseByConnection[connectionID]
         await loadColumns(for: table, connectionID: connectionID)
+        await loadForeignKeys(for: table, connectionID: connectionID)
         let sql = (try? await manager.previewQuery(connectionID, table: table, database: db, limit: settings.queryLimit))
             ?? "SELECT * FROM \"\(table.name)\" LIMIT \(settings.queryLimit);"
         if inNewTab || activeTab == nil {
@@ -288,39 +413,239 @@ final class AppState {
         await runActiveQuery()
     }
 
-    /// Resolves the target table for CRUD operations on the active tab.
+    /// Infers the target table from a SQL / Redis / Elasticsearch / Neo4j / Flux query string.
+    func inferTargetTable(from rawSQL: String, connectionID: String) -> TableInfo? {
+        let connType = connections.first { $0.id == connectionID }?.type ?? .sqlite
+        let statements = StatementSplitter.split(rawSQL, type: connType)
+        let sql = (statements.last ?? rawSQL).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sql.isEmpty else { return nil }
+        let knownTables = tables(for: connectionID)
+
+        // Joined, unioned, or grouped queries do not map to a single mutable table pill
+        if sql.range(of: #"\b(JOIN|GROUP\s+BY|UNION)\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            return nil
+        }
+
+        var candidateName: String?
+
+        switch connType {
+        case .redis:
+            let tokens = RedisCommandParser.tokenize(sql)
+            if tokens.count >= 2 {
+                candidateName = tokens[1]
+            }
+        case .elasticsearch:
+            if let r = sql.range(of: #"^(?:GET|POST|PUT|DELETE)\s+/([A-Za-z0-9_.\-]+)"#, options: [.regularExpression, .caseInsensitive]) {
+                candidateName = String(sql[r]).replacingOccurrences(of: #"^(?:GET|POST|PUT|DELETE)\s+/"#, with: "", options: [.regularExpression, .caseInsensitive])
+            }
+        case .neo4j:
+            if let r = sql.range(of: #"\([A-Za-z0-9_]*:([A-Za-z0-9_]+)"#, options: .regularExpression) {
+                candidateName = String(sql[r]).components(separatedBy: ":").last
+            }
+        case .influxdb:
+            if let r = sql.range(of: #"_measurement\s*==\s*"([^"]+)""#, options: .regularExpression) {
+                candidateName = String(sql[r])
+                    .replacingOccurrences(of: #"^_measurement\s*==\s*""#, with: "", options: .regularExpression)
+                    .replacingOccurrences(of: "\"", with: "")
+            }
+        default:
+            let patterns = [
+                #"\bFROM\s+([`"'\[\]A-Za-z0-9_.]+)"#,
+                #"\bINTO\s+([`"'\[\]A-Za-z0-9_.]+)"#,
+                #"^\s*UPDATE\s+([`"'\[\]A-Za-z0-9_.]+)"#,
+                #"\bTABLE\s+([`"'\[\]A-Za-z0-9_.]+)"#
+            ]
+            for pat in patterns {
+                if let r = sql.range(of: pat, options: [.regularExpression, .caseInsensitive]) {
+                    let frag = String(sql[r])
+                    let stripped = frag.replacingOccurrences(
+                        of: #"^\s*(?:FROM|INTO|UPDATE|TABLE)\s+"#,
+                        with: "",
+                        options: [.regularExpression, .caseInsensitive]
+                    )
+                    let cleaned = stripped.trimmingCharacters(in: CharacterSet(charactersIn: "`\"'[] \t\n;"))
+                    candidateName = cleaned.split(separator: ".").last.map(String.init) ?? cleaned
+                    break
+                }
+            }
+        }
+
+        guard let name = candidateName, !name.isEmpty else { return nil }
+        if let matched = knownTables.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            return matched
+        }
+        return TableInfo(name: name, kind: .table, schema: selectedDatabaseByConnection[connectionID])
+    }
+
+    /// Resolves the target table for the active tab, always reflecting the latest query.
     var activeTargetTable: TableInfo? {
         guard let tab = activeTab, let connID = tab.connectionID ?? connections.first?.id else { return nil }
+        if let active = tab.activeTable {
+            return active
+        }
+        return inferTargetTable(from: tab.sql, connectionID: connID)
+    }
+
+    // MARK: - Query Editor Auto-Completion
+
+    private static let sqlKeywords: [String] = [
+        "SELECT", "FROM", "WHERE", "ORDER BY", "GROUP BY", "HAVING", "LIMIT", "OFFSET",
+        "JOIN", "LEFT JOIN", "INNER JOIN", "RIGHT JOIN", "ON", "AS", "DISTINCT",
+        "INSERT INTO", "VALUES", "UPDATE", "SET", "DELETE FROM", "CREATE TABLE",
+        "ALTER TABLE", "DROP TABLE", "TRUNCATE TABLE", "PRIMARY KEY", "FOREIGN KEY",
+        "REFERENCES", "NOT NULL", "DEFAULT", "UNIQUE", "INDEX", "VIEW", "WITH",
+        "UNION ALL", "CASE", "WHEN", "THEN", "ELSE", "END", "AND", "OR", "IN",
+        "IS NULL", "IS NOT NULL", "LIKE", "ILIKE", "BETWEEN", "EXISTS", "RETURNING",
+        "EXPLAIN", "PRAGMA", "HGETALL", "HSET", "LRANGE", "SMEMBERS", "ZRANGE",
+        "MATCH", "RETURN", "OPTIONAL MATCH"
+    ]
+
+    private static let sqlFunctions: [String] = [
+        "COUNT()", "SUM()", "AVG()", "MIN()", "MAX()", "ROUND()", "COALESCE()",
+        "LOWER()", "UPPER()", "LENGTH()", "SUBSTR()", "NOW()", "CURRENT_TIMESTAMP",
+        "DATE()", "DATETIME()", "CAST()", "JSON_EXTRACT()"
+    ]
+
+    /// Computes ranked auto-completion suggestions (Databases, Tables, Views, Columns, Keywords, Functions)
+    /// for the current cursor token in `NativeCodeEditor`.
+    func autocompleteSuggestions(prefix: String, fullSQL: String) -> [CompletionSuggestion] {
+        guard let connID = activeTab?.connectionID ?? connections.first?.id else { return [] }
+        let trimmedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Check for `tableOrAlias.columnPrefix` dot completion
+        if trimmedPrefix.contains(".") {
+            let parts = trimmedPrefix.split(separator: ".", omittingEmptySubsequences: false)
+            guard parts.count == 2 else { return [] }
+            let qualifier = String(parts[0]).trimmingCharacters(in: CharacterSet(charactersIn: "\"`[]"))
+            let colPrefix = String(parts[1]).lowercased()
+
+            let knownTables = tables(for: connID)
+            // Resolve qualifier as either a table name, database/schema name, or SQL alias (`FROM orders o`)
+            var matchedTable = knownTables.first { $0.name.caseInsensitiveCompare(qualifier) == .orderedSame }
+            if matchedTable == nil {
+                // Check alias pattern `FROM <table> [AS] <qualifier>` or `JOIN <table> [AS] <qualifier>`
+                let aliasPattern = "(?:FROM|JOIN)\\s+[`\"']?([A-Za-z0-9_]+)[`\"']?\\s+(?:AS\\s+)?\(NSRegularExpression.escapedPattern(for: qualifier))\\b"
+                if let r = fullSQL.range(of: aliasPattern, options: [.regularExpression, .caseInsensitive]) {
+                    let frag = String(fullSQL[r])
+                    let tokens = frag.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                    if tokens.count >= 2 {
+                        let tName = tokens[1].trimmingCharacters(in: CharacterSet(charactersIn: "`\"'"))
+                        matchedTable = knownTables.first { $0.name.caseInsensitiveCompare(tName) == .orderedSame }
+                    }
+                }
+            }
+
+            if let table = matchedTable {
+                let cols = columns(for: table, connectionID: connID)
+                return cols
+                    .filter { colPrefix.isEmpty || $0.name.lowercased().hasPrefix(colPrefix) || $0.name.lowercased().contains(colPrefix) }
+                    .map { col in
+                        CompletionSuggestion(
+                            insertText: "\(qualifier).\(col.name)",
+                            displayText: "\(qualifier).\(col.name)",
+                            kind: .column,
+                            detail: "\(table.name) • \(col.type.isEmpty ? "column" : col.type)"
+                        )
+                    }
+            }
+
+            // Or `database.table` completion
+            let dbs = databasesByConnection[connID] ?? []
+            if dbs.contains(where: { $0.caseInsensitiveCompare(qualifier) == .orderedSame }) {
+                return knownTables
+                    .filter { colPrefix.isEmpty || $0.name.lowercased().hasPrefix(colPrefix) }
+                    .map { t in
+                        CompletionSuggestion(
+                            insertText: "\(qualifier).\(t.name)",
+                            displayText: "\(qualifier).\(t.name)",
+                            kind: t.kind == .view ? .view : .table,
+                            detail: qualifier
+                        )
+                    }
+            }
+            return []
+        }
+
+        let q = trimmedPrefix.lowercased()
+        guard !q.isEmpty else { return [] }
+
+        var results: [CompletionSuggestion] = []
+        var seen = Set<String>()
+
+        // 1. Tables & Views
         let knownTables = tables(for: connID)
-        if let explicit = tab.activeTable {
-            return explicit
+        for t in knownTables where t.name.lowercased().hasPrefix(q) || t.name.lowercased().contains(q) {
+            let s = CompletionSuggestion(
+                insertText: t.name,
+                displayText: t.name,
+                kind: t.kind == .view ? .view : .table,
+                detail: t.schema ?? "schema"
+            )
+            if seen.insert(s.id).inserted { results.append(s) }
         }
-        // Infer from simple SELECT ... FROM <table> queries without JOIN/GROUP BY
-        let sql = tab.sql
-        if sql.range(of: #"\b(JOIN|GROUP\s+BY|UNION)\b"#, options: [.regularExpression, .caseInsensitive]) == nil,
-           let matchRange = sql.range(of: #"(?:FROM|GET\s+/)\s*[`"']?([A-Za-z0-9_.\-:]+)[`"']?"#, options: [.regularExpression, .caseInsensitive]) {
-            let fragment = String(sql[matchRange])
-            let cleaned = fragment
-                .replacingOccurrences(of: #"^(FROM|GET\s+/)\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
-                .replacingOccurrences(of: #"/.*$"#, with: "", options: .regularExpression)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "`\"' \t\n;"))
-            let tableName = cleaned.split(separator: ".").last.map(String.init) ?? cleaned
-            if let found = knownTables.first(where: { $0.name.caseInsensitiveCompare(tableName) == .orderedSame }) {
-                return found
-            }
-            if !tableName.isEmpty {
-                return TableInfo(name: tableName)
+
+        // 2. Columns across known tables & active result set
+        for t in knownTables {
+            for col in columns(for: t, connectionID: connID)
+            where col.name.lowercased().hasPrefix(q) || col.name.lowercased().contains(q) {
+                let s = CompletionSuggestion(
+                    insertText: col.name,
+                    displayText: col.name,
+                    kind: .column,
+                    detail: "\(t.name)\(col.type.isEmpty ? "" : " (\(col.type))")"
+                )
+                if seen.insert("COL::\(col.name)::\(t.name)").inserted { results.append(s) }
             }
         }
-        return knownTables.first
+        if let activeCols = activeTab?.activeResult?.columns {
+            for col in activeCols where col.name.lowercased().hasPrefix(q) {
+                let s = CompletionSuggestion(
+                    insertText: col.name,
+                    displayText: col.name,
+                    kind: .column,
+                    detail: col.type.isEmpty ? "result column" : col.type
+                )
+                if seen.insert("COL::\(col.name)::result").inserted { results.append(s) }
+            }
+        }
+
+        // 3. Databases
+        for db in (databasesByConnection[connID] ?? []) where db.lowercased().hasPrefix(q) || db.lowercased().contains(q) {
+            let s = CompletionSuggestion(insertText: db, displayText: db, kind: .database, detail: "database")
+            if seen.insert(s.id).inserted { results.append(s) }
+        }
+
+        // 4. SQL / NoSQL Keywords & Functions
+        for kw in Self.sqlKeywords where kw.lowercased().hasPrefix(q) {
+            let s = CompletionSuggestion(insertText: kw, displayText: kw, kind: .keyword, detail: "keyword")
+            if seen.insert(s.id).inserted { results.append(s) }
+        }
+        for fn in Self.sqlFunctions where fn.lowercased().hasPrefix(q) {
+            let clean = fn.replacingOccurrences(of: "()", with: "")
+            let s = CompletionSuggestion(insertText: clean, displayText: fn, kind: .function, detail: "function")
+            if seen.insert(s.id).inserted { results.append(s) }
+        }
+
+        // Sort prefix matches before substring matches
+        results.sort { a, b in
+            let aPre = a.displayText.lowercased().hasPrefix(q)
+            let bPre = b.displayText.lowercased().hasPrefix(q)
+            if aPre != bPre { return aPre }
+            return a.displayText.count < b.displayText.count
+        }
+        return Array(results.prefix(12))
     }
 
     // MARK: - Row & Table CRUD Operations
 
-    private func primaryKeyNames(for table: TableInfo, connectionID: String) async -> Set<String> {
-        await loadColumns(for: table, connectionID: connectionID)
+    func primaryKeyNamesSync(for table: TableInfo, connectionID: String) -> Set<String> {
         let cols = columns(for: table, connectionID: connectionID)
         return Set(cols.filter(\.primaryKey).map(\.name))
+    }
+
+    private func primaryKeyNames(for table: TableInfo, connectionID: String) async -> Set<String> {
+        await loadColumns(for: table, connectionID: connectionID)
+        return primaryKeyNamesSync(for: table, connectionID: connectionID)
     }
 
     func insertRow(into table: TableInfo, values: [(column: String, value: CellValue)]) async throws {
@@ -347,6 +672,49 @@ final class AppState {
 
         _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
         setStatus("Inserted row into \(table.name)", level: .success)
+        await runActiveQuery()
+    }
+
+    func bulkInsertRows(into table: TableInfo, columns: [String], rows: [[CellValue]]) async throws {
+        guard let conn = activeConnection else { throw DatabaseError("No active connection") }
+        guard !rows.isEmpty else { throw DatabaseError("Bulk insert requires at least one row") }
+        let db = activeTab?.database ?? selectedDatabaseByConnection[conn.id]
+        let isDemo = DemoDatabaseCatalog.isDemo(conn)
+
+        switch conn.type {
+        case .redis:
+            var pairs: [String] = []
+            for row in rows {
+                let dict = Dictionary(uniqueKeysWithValues: zip(columns, row.map(\.description)))
+                let field = dict["field"] ?? dict["member"] ?? dict["element"] ?? row.first?.description ?? "key"
+                let val = dict["value"] ?? dict["score"] ?? (row.count > 1 ? row[1].description : "")
+                pairs.append("\(RedisCommandParser.quote(field)) \(RedisCommandParser.quote(val))")
+            }
+            let statement = "HSET \(RedisCommandParser.quote(table.name)) \(pairs.joined(separator: " "))"
+            _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
+        case .elasticsearch:
+            for (idx, row) in rows.enumerated() {
+                var obj: [String: Any] = [:]
+                for (col, val) in zip(columns, row) where col != "_index" {
+                    obj[col] = val.jsonValue
+                }
+                let docID = (obj["_id"] as? String) ?? "doc-\(Int.random(in: 1000...9999))-\(idx)"
+                let data = try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
+                let statement = "POST /\(table.name)/_doc/\(docID)\n\(String(decoding: data, as: UTF8.self))"
+                _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
+            }
+        default:
+            let statement = try RowMutator.buildBulkInsertSQL(
+                table: table,
+                dialect: conn.type,
+                isDemo: isDemo,
+                columns: columns,
+                rows: rows
+            )
+            _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
+        }
+
+        setStatus("Bulk inserted \(rows.count) row(s) into \(table.name)", level: .success)
         await runActiveQuery()
     }
 
@@ -388,65 +756,137 @@ final class AppState {
         await runActiveQuery()
     }
 
-    func duplicateRow(in table: TableInfo, columns: [ColumnDef], row: [CellValue]) async throws {
+    func bulkUpdateRows(
+        in table: TableInfo,
+        columns: [ColumnDef],
+        targetRows: [[CellValue]],
+        updatedValues: [(column: String, value: CellValue)]
+    ) async throws {
         guard let conn = activeConnection else { throw DatabaseError("No active connection") }
+        guard !targetRows.isEmpty else { throw DatabaseError("Select at least one row to bulk update") }
+        guard !updatedValues.isEmpty else { throw DatabaseError("Select at least one column to update") }
         let db = activeTab?.database ?? selectedDatabaseByConnection[conn.id]
         let isDemo = DemoDatabaseCatalog.isDemo(conn)
         let pks = await primaryKeyNames(for: table, connectionID: conn.id)
 
-        let statement: String
         switch conn.type {
-        case .elasticsearch:
-            var obj: [String: Any] = [:]
-            for (i, col) in columns.enumerated() where i < row.count && col.name != "_index" && col.name != "_id" {
-                obj[col.name] = row[i].jsonValue
+        case .redis:
+            let newVal = updatedValues.first?.value.description ?? ""
+            var pairs: [String] = []
+            for row in targetRows {
+                let field = row.first?.description ?? "field"
+                pairs.append("\(RedisCommandParser.quote(field)) \(RedisCommandParser.quote(newVal))")
             }
-            let newID = "doc-\(Int.random(in: 1000...9999))"
-            obj["_id"] = newID
-            let data = try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
-            statement = "POST /\(table.name)/_doc/\(newID)\n\(String(decoding: data, as: UTF8.self))"
+            let statement = "HSET \(RedisCommandParser.quote(table.name)) \(pairs.joined(separator: " "))"
+            _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
+        case .elasticsearch:
+            for row in targetRows {
+                var obj: [String: Any] = [:]
+                for (i, col) in columns.enumerated() where i < row.count && col.name != "_index" {
+                    obj[col.name] = row[i].jsonValue
+                }
+                for (col, val) in updatedValues { obj[col] = val.jsonValue }
+                let docID = "\(obj["_id"] ?? "doc-1")"
+                let data = try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
+                let statement = "PUT /\(table.name)/_doc/\(docID)\n\(String(decoding: data, as: UTF8.self))"
+                _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
+            }
         default:
-            statement = try RowMutator.buildDuplicateSQL(
+            let statement = try RowMutator.buildBulkUpdateSQL(
                 table: table,
                 dialect: conn.type,
                 isDemo: isDemo,
                 columns: columns,
                 pkColumnNames: pks,
-                row: row
+                targetRows: targetRows,
+                updatedValues: updatedValues
             )
+            _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
         }
 
-        _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
-        setStatus("Duplicated row in \(table.name)", level: .success)
+        setStatus("Bulk updated \(targetRows.count) row(s) in \(table.name)", level: .success)
+        await runActiveQuery()
+    }
+
+    func duplicateRow(in table: TableInfo, columns: [ColumnDef], row: [CellValue]) async throws {
+        try await duplicateRows(in: table, columns: columns, rows: [row])
+    }
+
+    func duplicateRows(in table: TableInfo, columns: [ColumnDef], rows: [[CellValue]]) async throws {
+        guard let conn = activeConnection else { throw DatabaseError("No active connection") }
+        guard !rows.isEmpty else { return }
+        let db = activeTab?.database ?? selectedDatabaseByConnection[conn.id]
+        let isDemo = DemoDatabaseCatalog.isDemo(conn)
+        let pks = await primaryKeyNames(for: table, connectionID: conn.id)
+
+        switch conn.type {
+        case .redis:
+            var pairs: [String] = []
+            for (idx, row) in rows.enumerated() {
+                let field = "\(row.first?.description ?? "key")_copy\(rows.count > 1 ? "_\(idx + 1)" : "")"
+                let val = row.count > 1 ? row[1].description : ""
+                pairs.append("\(RedisCommandParser.quote(field)) \(RedisCommandParser.quote(val))")
+            }
+            let statement = "HSET \(RedisCommandParser.quote(table.name)) \(pairs.joined(separator: " "))"
+            _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
+        case .elasticsearch:
+            for (idx, row) in rows.enumerated() {
+                var obj: [String: Any] = [:]
+                for (i, col) in columns.enumerated() where i < row.count && col.name != "_index" && col.name != "_id" {
+                    obj[col.name] = row[i].jsonValue
+                }
+                let newID = "doc-\(Int.random(in: 1000...9999))-\(idx)"
+                obj["_id"] = newID
+                let data = try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
+                let statement = "POST /\(table.name)/_doc/\(newID)\n\(String(decoding: data, as: UTF8.self))"
+                _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
+            }
+        default:
+            let statement = try RowMutator.buildBulkDuplicateSQL(
+                table: table,
+                dialect: conn.type,
+                isDemo: isDemo,
+                columns: columns,
+                pkColumnNames: pks,
+                rows: rows
+            )
+            _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
+        }
+
+        setStatus("Duplicated \(rows.count) row(s) in \(table.name)", level: .success)
         await runActiveQuery()
     }
 
     func deleteRows(from table: TableInfo, columns: [ColumnDef], rows: [[CellValue]]) async throws {
         guard let conn = activeConnection else { throw DatabaseError("No active connection") }
+        guard !rows.isEmpty else { return }
         let db = activeTab?.database ?? selectedDatabaseByConnection[conn.id]
         let isDemo = DemoDatabaseCatalog.isDemo(conn)
         let pks = await primaryKeyNames(for: table, connectionID: conn.id)
 
-        for row in rows {
-            let statement: String
-            switch conn.type {
-            case .redis:
-                let field = row.first?.description ?? ""
-                statement = "HDEL \(RedisCommandParser.quote(table.name)) \(RedisCommandParser.quote(field))"
-            case .elasticsearch:
-                let idIdx = columns.firstIndex { $0.name == "_id" } ?? 0
-                let docID = idIdx < row.count ? row[idIdx].description : ""
-                statement = "DELETE /\(table.name)/_doc/\(docID)"
-            default:
-                statement = try RowMutator.buildDeleteSQL(
-                    table: table,
-                    dialect: conn.type,
-                    isDemo: isDemo,
-                    columns: columns,
-                    pkColumnNames: pks,
-                    row: row
-                )
+        switch conn.type {
+        case .redis:
+            let fields = rows.compactMap { $0.first?.description }.filter { !$0.isEmpty }.map(RedisCommandParser.quote)
+            if !fields.isEmpty {
+                let statement = "HDEL \(RedisCommandParser.quote(table.name)) \(fields.joined(separator: " "))"
+                _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
             }
+        case .elasticsearch:
+            let idIdx = columns.firstIndex { $0.name == "_id" } ?? 0
+            for row in rows {
+                let docID = idIdx < row.count ? row[idIdx].description : ""
+                let statement = "DELETE /\(table.name)/_doc/\(docID)"
+                _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
+            }
+        default:
+            let statement = try RowMutator.buildBulkDeleteSQL(
+                table: table,
+                dialect: conn.type,
+                isDemo: isDemo,
+                columns: columns,
+                pkColumnNames: pks,
+                rows: rows
+            )
             _ = try await manager.run(statement, connectionID: conn.id, type: conn.type, database: db, autoLimit: false)
         }
 
@@ -542,7 +982,26 @@ final class AppState {
         }
     }
 
-    func runActiveQuery() async {
+    func startActiveQuery(confirmedDestructive: Bool = false) {
+        guard let tabID = activeTab?.id else { return }
+        runningTasks[tabID]?.cancel()
+        let task = Task { @MainActor in
+            await self.runActiveQuery(confirmedDestructive: confirmedDestructive)
+            self.runningTasks.removeValue(forKey: tabID)
+        }
+        runningTasks[tabID] = task
+    }
+
+    func cancelActiveQuery() {
+        guard let idx = activeTabIndex else { return }
+        let tabID = tabs[idx].id
+        runningTasks[tabID]?.cancel()
+        runningTasks.removeValue(forKey: tabID)
+        tabs[idx].isRunning = false
+        setStatus("Query cancelled by user", level: .warning)
+    }
+
+    func runActiveQuery(confirmedDestructive: Bool = false) async {
         guard let idx = activeTabIndex else { return }
         let tab = tabs[idx]
         let sql = tab.sql.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -556,13 +1015,38 @@ final class AppState {
             return
         }
 
+        // Security Guard 1: Enforce Read-Only Safe Mode
+        if settings.readOnlyMode && QueryGuard.isWriteOrDDL(sql, type: conn.type) {
+            let msg = "Blocked by Read-Only Safe Mode: disable Read-Only in the toolbar or settings to execute write/DDL statements."
+            tabs[idx].errorMessage = msg
+            setStatus(msg, level: .warning)
+            return
+        }
+
+        // Security Guard 2: Confirm destructive statements (DROP, TRUNCATE, DELETE/UPDATE without WHERE)
+        if settings.confirmDestructiveQueries && !confirmedDestructive,
+           let warning = QueryGuard.detectDestructiveRisk(sql, type: conn.type) {
+            pendingDestructiveWarning = warning
+            return
+        }
+
         if !connectedIDs.contains(connID) {
             await connect(conn)
             guard connectedIDs.contains(connID) else { return }
         }
 
-        tabs[idx].isRunning = true
-        tabs[idx].errorMessage = nil
+        guard let runIdx = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        tabs[runIdx].isRunning = true
+        tabs[runIdx].errorMessage = nil
+
+        // Always update the target table pill to match the newly executed query
+        let inferredTable = inferTargetTable(from: sql, connectionID: connID)
+        tabs[runIdx].activeTable = inferredTable
+        if let inferredTable {
+            await loadColumns(for: inferredTable, connectionID: connID)
+            await loadForeignKeys(for: inferredTable, connectionID: connID)
+        }
+
         let db = tab.database ?? selectedDatabaseByConnection[connID]
         let start = Date()
         setStatus("Running query on \(conn.name)…", level: .info)
@@ -573,7 +1057,8 @@ final class AppState {
                 connectionID: connID,
                 type: conn.type,
                 database: db,
-                autoLimit: settings.autoLimitEnabled
+                autoLimit: settings.autoLimitEnabled,
+                timeout: TimeInterval(settings.queryTimeoutSeconds)
             )
             let duration = Date().timeIntervalSince(start)
             if let currentIdx = tabs.firstIndex(where: { $0.id == tab.id }) {
@@ -581,10 +1066,16 @@ final class AppState {
                 tabs[currentIdx].results = results
                 tabs[currentIdx].activeResultIndex = max(0, results.count - 1)
                 tabs[currentIdx].errorMessage = nil
+                tabs[currentIdx].activeTable = inferredTable
             }
             let totalRows = results.reduce(0) { $0 + $1.rowCount }
             recordHistory(conn: conn, database: db, sql: sql, duration: duration, rows: totalRows, error: nil)
             setStatus(String(format: "Returned %d rows in %.0f ms", totalRows, duration * 1000), level: .success)
+        } catch is CancellationError {
+            if let currentIdx = tabs.firstIndex(where: { $0.id == tab.id }) {
+                tabs[currentIdx].isRunning = false
+            }
+            setStatus("Query cancelled", level: .warning)
         } catch let failure as StatementFailure {
             let duration = Date().timeIntervalSince(start)
             if let currentIdx = tabs.firstIndex(where: { $0.id == tab.id }) {
@@ -610,10 +1101,10 @@ final class AppState {
             connectionID: conn.id,
             connectionName: conn.name,
             database: database,
-            query: sql,
+            query: QueryGuard.redactSecrets(sql),
             duration: duration,
             rowCount: rows,
-            error: error
+            error: error.map(QueryGuard.redactSecrets)
         )
         history.insert(entry, at: 0)
         if history.count > HistoryEntry.maxEntries {

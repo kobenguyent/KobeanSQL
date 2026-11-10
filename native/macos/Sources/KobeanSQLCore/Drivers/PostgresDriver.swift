@@ -178,6 +178,30 @@ public actor PostgresDriver: DatabaseDriver {
         }
     }
 
+    public func foreignKeys(table: TableInfo, database: String?) async throws -> [ForeignKeyInfo] {
+        let schema = SQLIdent.literal(table.schema ?? "public")
+        let name = SQLIdent.literal(table.name)
+        let sql = """
+        SELECT kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage ccu
+          ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND tc.table_schema = \(schema) AND tc.table_name = \(name)
+        """
+        return try await execute(sql, database: database).rows.compactMap { r in
+            guard r.count >= 4 else { return nil }
+            return ForeignKeyInfo(
+                columnName: r[0].description,
+                referencedTable: r[2].description,
+                referencedSchema: r[1].description,
+                referencedColumn: r[3].description
+            )
+        }
+    }
+
     public func serverVersion() async throws -> String {
         try await execute("SELECT version()", database: nil).rows.first?.first?.description ?? "unknown"
     }

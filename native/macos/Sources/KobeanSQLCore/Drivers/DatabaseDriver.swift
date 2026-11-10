@@ -11,6 +11,7 @@ public protocol DatabaseDriver: Actor {
     func databases() async throws -> [String]
     func tables(database: String?) async throws -> [TableInfo]
     func columns(table: TableInfo, database: String?) async throws -> [ColumnInfo]
+    func foreignKeys(table: TableInfo, database: String?) async throws -> [ForeignKeyInfo]
     func serverVersion() async throws -> String
     /// Query used to preview a table/key/label when the user opens it from the sidebar.
     func previewQuery(for table: TableInfo, database: String?, limit: Int) -> String
@@ -18,6 +19,7 @@ public protocol DatabaseDriver: Actor {
 
 public extension DatabaseDriver {
     func columns(table: TableInfo, database: String?) async throws -> [ColumnInfo] { [] }
+    func foreignKeys(table: TableInfo, database: String?) async throws -> [ForeignKeyInfo] { [] }
 }
 
 public enum DriverFactory {
