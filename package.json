@@ -25,7 +25,11 @@
     "test:watch": "vitest",
     "test:e2e:visualizer": "npm run build && xvfb-run -a playwright test tests/e2e/database-visualizer.spec.ts",
     "test:e2e:visualizer:update": "npm run build && xvfb-run -a playwright test tests/e2e/database-visualizer.spec.ts --update-snapshots",
-    "docs:sync:check": "node scripts/check-docs-sync.mjs"
+    "docs:sync:check": "node scripts/check-docs-sync.mjs",
+    "macos:native:build": "./scripts/build-macos-native.sh",
+    "macos:native:install": "./scripts/install-macos-native.sh",
+    "macos:native:run": "./scripts/install-macos-native.sh --launch",
+    "macos:native:test": "./dist/native-macos/KobeanSQL.app/Contents/MacOS/KobeanSQL --self-test"
   },
   "dependencies": {
     "@clickhouse/client": "^1.19.0",

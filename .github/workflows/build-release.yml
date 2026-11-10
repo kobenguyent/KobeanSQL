@@ -90,11 +90,22 @@ jobs:
       - name: Upload release assets (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          for f in dist/*.dmg dist/*.zip; do
+          ./scripts/build-macos-native.sh
+          for f in dist/*.dmg dist/*.zip dist/native-macos/KobeanSQL-*-macOS-native-*.dmg dist/native-macos/KobeanSQL-*-macOS-native-*.zip; do
             [ -f "$f" ] && gh release upload "${{ needs.resolve-release.outputs.tag_name }}" "${f}" --clobber
           done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload native macOS release artifact
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KobeanSQL-macOS-native-release
+          path: |
+            dist/native-macos/KobeanSQL-*-macOS-native-*.dmg
+            dist/native-macos/KobeanSQL-*-macOS-native-*.zip
+          if-no-files-found: error
 
       - name: Upload release assets (Windows)
         if: matrix.os == 'windows-latest'

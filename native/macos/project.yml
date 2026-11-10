@@ -1,0 +1,33 @@
+name: KobeanSQL
+options:
+  bundleIdPrefix: com.kobenguyent.kobeansql
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+packages:
+  KobeanSQLPackage:
+    path: .
+targets:
+  KobeanSQLApp:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/KobeanSQL
+    entitlements:
+      path: Resources/Entitlements.plist
+    settings:
+      base:
+        PRODUCT_NAME: KobeanSQL
+        PRODUCT_BUNDLE_IDENTIFIER: com.kobenguyent.kobeansql.native
+        MARKETING_VERSION: 1.31.0
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        # Sign to Run Locally (Ad-Hoc) — works without an Apple Developer Account
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+    dependencies:
+      - package: KobeanSQLPackage
+        product: KobeanSQLCore

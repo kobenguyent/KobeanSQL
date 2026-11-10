@@ -14,3 +14,6 @@ dist/
 .idea/
 playwright-report/
 test-results/
+native/macos/.build/
+native/macos/.swiftpm/
+native/macos/KobeanSQL.xcodeproj/
