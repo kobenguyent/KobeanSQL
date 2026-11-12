@@ -27,6 +27,13 @@ enum StatusLevel {
     case info, success, warning, error
 }
 
+enum UpdateDownloadState: Equatable {
+    case idle
+    case downloading(progress: Double)
+    case ready(fileURL: URL)
+    case failed(String)
+}
+
 struct CompletionSuggestion: Identifiable, Hashable {
     enum Kind: String {
         case database = "DB"
@@ -75,11 +82,40 @@ final class AppState {
     var statusMessage: String = "Ready"
     var statusLevel: StatusLevel = .info
 
-    // Sheet state
+    // Sheet & Update state
     var showingConnectionSheet = false
     var editingConnection: ConnectionConfig?
     var showingHistorySheet = false
     var showingSettingsSheet = false
+    var showingUpdateSheet = false
+    var isCheckingForUpdates = false
+    var updateDownloadState: UpdateDownloadState = .idle
+    var updateCheckError: String?
+    private var updateSchedulerTask: Task<Void, Never>?
+
+    var currentAppVersion: String {
+        SemanticVersion.currentAppVersion()
+    }
+
+    var isUpdateAvailable: Bool {
+        guard let latest = settings.updates.cachedLatestVersion else { return false }
+        return SemanticVersion.isNewerVersion(latest, than: currentAppVersion)
+    }
+
+    var shouldShowUpdateBanner: Bool {
+        guard isUpdateAvailable, let latest = settings.updates.cachedLatestVersion else { return false }
+        if let ignored = settings.updates.ignoredVersion,
+           SemanticVersion.normalize(ignored) == SemanticVersion.normalize(latest) {
+            return false
+        }
+        if let dismissed = settings.updates.dismissedVersion,
+           SemanticVersion.normalize(dismissed) == SemanticVersion.normalize(latest),
+           let dismissedAt = settings.updates.dismissedAt,
+           Date().timeIntervalSince(dismissedAt) < UpdateSettings.dismissTTL {
+            return false
+        }
+        return true
+    }
 
     init() {
         reloadFromDisk()
@@ -113,6 +149,7 @@ final class AppState {
                     await self.runActiveQuery()
                 }
             }
+            scheduleAutomaticUpdateChecks()
         }
     }
 
@@ -1135,9 +1172,178 @@ final class AppState {
     }
 
     func updateSettings(_ newSettings: NativeAppSettings) {
+        let intervalChanged = settings.updates.autoCheckEnabled != newSettings.updates.autoCheckEnabled
+            || settings.updates.checkIntervalHours != newSettings.updates.checkIntervalHours
         settings = newSettings
         try? storage.saveSettings(newSettings)
+        if intervalChanged {
+            scheduleAutomaticUpdateChecks()
+        }
         setStatus("Settings saved", level: .success)
+    }
+
+    // MARK: - Software Updates (GitHub Releases)
+
+    func scheduleAutomaticUpdateChecks() {
+        updateSchedulerTask?.cancel()
+        guard settings.updates.autoCheckEnabled else { return }
+        let intervalSecs = TimeInterval(max(1, settings.updates.checkIntervalHours) * 3600)
+
+        updateSchedulerTask = Task { @MainActor in
+            var initialDelay: TimeInterval = 15
+            if let last = self.settings.updates.lastCheckedAt {
+                let elapsed = Date().timeIntervalSince(last)
+                if elapsed < intervalSecs {
+                    initialDelay = max(15, intervalSecs - elapsed)
+                }
+            }
+            try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))
+            while !Task.isCancelled && self.settings.updates.autoCheckEnabled {
+                await self.checkForUpdates(manual: false)
+                try? await Task.sleep(nanoseconds: UInt64(intervalSecs * 1_000_000_000))
+            }
+        }
+    }
+
+    func checkForUpdates(manual: Bool = false) async {
+        guard !isCheckingForUpdates else { return }
+        isCheckingForUpdates = true
+        updateCheckError = nil
+        if manual {
+            setStatus("Checking GitHub Releases for updates…", level: .info)
+        }
+
+        do {
+            let outcome = try await UpdateService.fetchLatestRelease(
+                etag: settings.updates.cachedETag,
+                force: manual || settings.updates.cachedDownloadURL == nil
+            )
+            var updated = settings
+            updated.updates.lastCheckedAt = Date()
+
+            switch outcome {
+            case .notModified(let etag):
+                if let etag { updated.updates.cachedETag = etag }
+            case .release(let version, let name, let notes, let releaseURL, let asset, let etag):
+                updated.updates.cachedLatestVersion = version
+                updated.updates.cachedReleaseName = name
+                updated.updates.cachedReleaseNotes = notes
+                updated.updates.cachedReleaseURL = releaseURL
+                updated.updates.cachedDownloadURL = asset?.browser_download_url
+                updated.updates.cachedAssetName = asset?.name
+                updated.updates.cachedAssetSize = asset?.size
+                updated.updates.cachedETag = etag
+            }
+
+            settings = updated
+            try? storage.saveSettings(updated)
+            isCheckingForUpdates = false
+
+            if isUpdateAvailable, let latest = settings.updates.cachedLatestVersion {
+                if manual {
+                    showingUpdateSheet = true
+                    setStatus("Update available: KobeanSQL v\(latest)", level: .success)
+                } else if shouldShowUpdateBanner {
+                    setStatus("New version available: KobeanSQL v\(latest)", level: .info)
+                }
+            } else if manual {
+                showingUpdateSheet = true
+                setStatus("You're up to date! (KobeanSQL v\(currentAppVersion))", level: .success)
+            }
+        } catch {
+            isCheckingForUpdates = false
+            updateCheckError = error.localizedDescription
+            if manual {
+                showingUpdateSheet = true
+                setStatus("Update check failed: \(error.localizedDescription)", level: .error)
+            }
+        }
+    }
+
+    func downloadUpdate() async {
+        if case .downloading = updateDownloadState { return }
+        updateDownloadState = .downloading(progress: 0)
+
+        if settings.updates.cachedDownloadURL == nil {
+            await checkForUpdates(manual: false)
+        }
+
+        guard let dlURL = settings.updates.cachedDownloadURL else {
+            let msg = "No native macOS download asset found on the latest release. Opening GitHub Releases page."
+            updateDownloadState = .failed(msg)
+            setStatus(msg, level: .warning)
+            return
+        }
+
+        do {
+            let fileURL = try await UpdateService.downloadAsset(
+                from: dlURL,
+                assetName: settings.updates.cachedAssetName
+            ) { [weak self] pct in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if case .downloading = self.updateDownloadState {
+                        self.updateDownloadState = .downloading(progress: pct)
+                    }
+                }
+            }
+            updateDownloadState = .ready(fileURL: fileURL)
+            setStatus("Update downloaded and ready to install.", level: .success)
+        } catch {
+            updateDownloadState = .failed(error.localizedDescription)
+            setStatus("Update download failed: \(error.localizedDescription)", level: .error)
+        }
+    }
+
+    func installReadyUpdate() {
+        guard case .ready(let fileURL) = updateDownloadState else { return }
+        do {
+            try UpdateService.installAndRelaunch(downloadedFile: fileURL)
+            setStatus("Installing update and relaunching KobeanSQL…", level: .success)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                NSApplication.shared.terminate(nil)
+            }
+        } catch {
+            updateDownloadState = .failed(error.localizedDescription)
+            setStatus("Install failed: \(error.localizedDescription)", level: .error)
+        }
+    }
+
+    func downloadAndInstallUpdate() async {
+        await downloadUpdate()
+        if case .ready = updateDownloadState {
+            installReadyUpdate()
+        }
+    }
+
+    func dismissUpdateReminder() {
+        guard let latest = settings.updates.cachedLatestVersion else { return }
+        var updated = settings
+        updated.updates.dismissedVersion = SemanticVersion.normalize(latest)
+        updated.updates.dismissedAt = Date()
+        settings = updated
+        try? storage.saveSettings(updated)
+    }
+
+    func ignoreCurrentUpdate() {
+        guard let latest = settings.updates.cachedLatestVersion else { return }
+        var updated = settings
+        updated.updates.ignoredVersion = SemanticVersion.normalize(latest)
+        settings = updated
+        try? storage.saveSettings(updated)
+        showingUpdateSheet = false
+        setStatus("Skipped update v\(latest)", level: .info)
+    }
+
+    func openReleasePage() {
+        let urlStr = settings.updates.cachedReleaseURL
+        let target: URL
+        if UpdateService.isAllowedReleasePageURL(urlStr), let u = urlStr.flatMap(URL.init(string:)) {
+            target = u
+        } else {
+            target = UpdateService.releasesPageURL
+        }
+        NSWorkspace.shared.open(target)
     }
 
     // MARK: - Local AI Schema Context

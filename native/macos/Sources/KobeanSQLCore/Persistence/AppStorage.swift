@@ -152,6 +152,7 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
     public var queryTimeoutSeconds: Int
     public var appearance: AppearanceMode
     public var ai: AISettings
+    public var updates: UpdateSettings
 
     public init(
         queryLimit: Int = 100,
@@ -160,7 +161,8 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
         confirmDestructiveQueries: Bool = true,
         queryTimeoutSeconds: Int = 30,
         appearance: AppearanceMode = .dark,
-        ai: AISettings = AISettings()
+        ai: AISettings = AISettings(),
+        updates: UpdateSettings = UpdateSettings()
     ) {
         self.queryLimit = min(max(queryLimit, 1), 10_000)
         self.autoLimitEnabled = autoLimitEnabled
@@ -169,6 +171,7 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
         self.queryTimeoutSeconds = min(max(queryTimeoutSeconds, 5), 120)
         self.appearance = appearance
         self.ai = ai
+        self.updates = updates
     }
 
     public init(from decoder: Decoder) throws {
@@ -180,6 +183,7 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
         self.queryTimeoutSeconds = min(max((try? c.decode(Int.self, forKey: .queryTimeoutSeconds)) ?? 30, 5), 120)
         self.appearance = (try? c.decode(AppearanceMode.self, forKey: .appearance)) ?? .dark
         self.ai = (try? c.decode(AISettings.self, forKey: .ai)) ?? AISettings()
+        self.updates = (try? c.decode(UpdateSettings.self, forKey: .updates)) ?? UpdateSettings()
     }
 }
 

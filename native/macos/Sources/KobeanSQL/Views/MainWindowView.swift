@@ -23,6 +23,10 @@ struct MainWindowView: View {
                     }
                 )
 
+                if state.shouldShowUpdateBanner, let latest = state.settings.updates.cachedLatestVersion {
+                    UpdateNotificationBanner(state: state, latestVersion: latest)
+                }
+
                 Divider()
 
                 // Editor + Results vertical split
@@ -50,6 +54,9 @@ struct MainWindowView: View {
         }
         .sheet(isPresented: $state.showingSettingsSheet) {
             SettingsSheetView(state: state)
+        }
+        .sheet(isPresented: $state.showingUpdateSheet) {
+            UpdateSheetView(state: state)
         }
         .alert("Save Query", isPresented: $showingSaveQueryAlert) {
             TextField("Query Name", text: $newSavedQueryName)
@@ -185,6 +192,28 @@ private struct TabHeaderBar: View {
             }
             .controlSize(.small)
             .help("Query History (⌘Y)")
+
+            Button {
+                if state.isUpdateAvailable {
+                    state.showingUpdateSheet = true
+                } else {
+                    Task { await state.checkForUpdates(manual: true) }
+                }
+            } label: {
+                if state.isCheckingForUpdates {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else if state.isUpdateAvailable {
+                    Label("Update", systemImage: "arrow.down.circle.fill")
+                        .foregroundStyle(GlassTheme.success)
+                } else {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle")
+                }
+            }
+            .controlSize(.small)
+            .help(state.isUpdateAvailable
+                  ? "Update available (v\(state.settings.updates.cachedLatestVersion ?? "")) — click to install"
+                  : "Check for Updates on GitHub Releases")
 
             Button {
                 state.showingSettingsSheet = true
@@ -323,9 +352,22 @@ private struct StatusBarView: View {
                     .foregroundStyle(connected ? GlassTheme.success : .secondary)
             }
 
-            Text("Native macOS • SwiftUI + AppKit")
+            Button {
+                state.showingUpdateSheet = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text("v\(state.currentAppVersion)")
+                    if state.isUpdateAvailable, let latest = state.settings.updates.cachedLatestVersion {
+                        Text("→ v\(latest)")
+                            .foregroundStyle(GlassTheme.success)
+                    }
+                    Text("• Native macOS")
+                }
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Click to view version & check GitHub Releases for updates")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
@@ -339,5 +381,71 @@ private struct StatusBarView: View {
         case .warning: GlassTheme.warning
         case .error: GlassTheme.danger
         }
+    }
+}
+
+private struct UpdateNotificationBanner: View {
+    @Bindable var state: AppState
+    let latestVersion: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(GlassTheme.success)
+
+            Text("New release available: **KobeanSQL v\(latestVersion)** (current: v\(state.currentAppVersion))")
+                .font(.system(size: 12))
+                .lineLimit(1)
+
+            if case .downloading(let progress) = state.updateDownloadState {
+                ProgressView(value: progress, total: 1.0)
+                    .frame(width: 110)
+                Text("\(Int(progress * 100))%")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if case .ready = state.updateDownloadState {
+                Button {
+                    state.installReadyUpdate()
+                } label: {
+                    Label("Install & Relaunch", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(GlassTheme.success)
+                .controlSize(.small)
+            } else {
+                Button {
+                    Task { await state.downloadAndInstallUpdate() }
+                } label: {
+                    Label("Update Now", systemImage: "arrow.down.to.line")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(GlassTheme.accent)
+                .controlSize(.small)
+                .disabled(isDownloading)
+            }
+
+            Button("Release Notes…") {
+                state.showingUpdateSheet = true
+            }
+            .controlSize(.small)
+
+            Button("Later") {
+                state.dismissUpdateReminder()
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(GlassTheme.accent.opacity(0.14))
+    }
+
+    private var isDownloading: Bool {
+        if case .downloading = state.updateDownloadState { return true }
+        return false
     }
 }

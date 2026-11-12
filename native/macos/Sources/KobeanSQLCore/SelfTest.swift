@@ -232,5 +232,33 @@ public enum SelfTestSuite {
             try check(!res.isEmpty && !res[0].rows.isEmpty, "Demo \(preset.type.rawValue) sample query rows")
             await manager.disconnect(cfg.id)
         }
+
+        // 11. GitHub Releases UpdateService & SemanticVersion
+        try check(SemanticVersion.normalize("v1.35.0") == "1.35.0", "Normalize version tag")
+        try check(SemanticVersion.isNewerVersion("v1.35.0", than: "1.34.0"), "Detect newer minor version")
+        try check(SemanticVersion.isNewerVersion("1.34.1", than: "1.34.0"), "Detect newer patch version")
+        try check(SemanticVersion.isNewerVersion("1.34.0", than: "1.34.0-beta.1"), "Stable is newer than pre-release")
+        try check(!SemanticVersion.isNewerVersion("1.34.0", than: "1.34.0"), "Same version is not newer")
+        try check(!SemanticVersion.isNewerVersion("1.33.9", than: "1.34.0"), "Older version is not newer")
+
+        try check(UpdateService.isAllowedDownloadURL("https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-macOS-native-arm64.zip"), "Allow GitHub release download URL")
+        try check(UpdateService.isAllowedDownloadURL("https://objects.githubusercontent.com/github-production-release-asset/asset.zip"), "Allow githubusercontent download URL")
+        try check(!UpdateService.isAllowedDownloadURL("http://github.com/kobenguyent/KobeanSQL/asset.zip"), "Reject non-HTTPS download URL")
+        try check(!UpdateService.isAllowedDownloadURL("https://evil.example.com/KobeanSQL.zip"), "Reject untrusted download host")
+
+        let sampleAssets = [
+            GitHubReleaseAsset(name: "KobeanSQL-1.35.0-arm64-mac.zip", browser_download_url: "https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-arm64-mac.zip", size: 95_000_000),
+            GitHubReleaseAsset(name: "KobeanSQL-1.35.0-macOS-native-arm64.dmg", browser_download_url: "https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-macOS-native-arm64.dmg", size: 8_000_000),
+            GitHubReleaseAsset(name: "KobeanSQL-1.35.0-macOS-native-arm64.zip", browser_download_url: "https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-macOS-native-arm64.zip", size: 7_500_000)
+        ]
+        let picked = UpdateService.pickBestNativeAsset(from: sampleAssets, arch: "arm64")
+        try check(picked?.name == "KobeanSQL-1.35.0-macOS-native-arm64.zip", "Prefer native macOS arm64 .zip over Electron .zip and .dmg")
+
+        let installerScript = UpdateService.buildInstallerScript(
+            downloadedFile: "/tmp/KobeanSQL-1.35.0-macOS-native-arm64.zip",
+            targetAppPath: "/Applications/KobeanSQL.app",
+            workDir: "/tmp"
+        )
+        try check(installerScript.contains("xattr -cr") && installerScript.contains("codesign --force --deep --sign -"), "Installer script strips quarantine & ad-hoc signs")
     }
 }

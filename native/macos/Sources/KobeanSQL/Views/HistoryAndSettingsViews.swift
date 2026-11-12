@@ -154,6 +154,53 @@ struct SettingsSheetView: View {
                     .pickerStyle(.segmented)
                 }
 
+                Section("Software Updates (GitHub Releases)") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Installed Version: v\(state.currentAppVersion)")
+                                .font(.subheadline.weight(.medium))
+                            if let latest = state.settings.updates.cachedLatestVersion {
+                                if state.isUpdateAvailable {
+                                    Text("Update available: v\(latest)")
+                                        .font(.caption)
+                                        .foregroundStyle(GlassTheme.success)
+                                } else {
+                                    Text("Up to date (latest: v\(latest))")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else {
+                                Text("Checks github.com/kobenguyent/KobeanSQL/releases")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button {
+                            Task { await state.checkForUpdates(manual: true) }
+                        } label: {
+                            if state.isCheckingForUpdates {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Check for Updates…", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                        }
+                        .controlSize(.small)
+                        .disabled(state.isCheckingForUpdates)
+                    }
+
+                    Toggle("Automatically check GitHub Releases for new versions", isOn: $draft.updates.autoCheckEnabled)
+
+                    HStack {
+                        Text("Check Interval (hours)")
+                        Spacer()
+                        TextField("24", value: $draft.updates.checkIntervalHours, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 90)
+                            .disabled(!draft.updates.autoCheckEnabled)
+                    }
+                }
+
                 Section("Local AI SQL Assistant (Loopback Only)") {
                     Picker("Provider", selection: $draft.ai.provider) {
                         ForEach(AISettings.Provider.allCases) { p in
@@ -201,7 +248,218 @@ struct SettingsSheetView: View {
             }
         }
         .padding(18)
-        .frame(width: 560, height: 480)
+        .frame(width: 580, height: 560)
+    }
+}
+
+struct UpdateSheetView: View {
+    @Bindable var state: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let updates = state.settings.updates
+        let latest = updates.cachedLatestVersion
+        let hasUpdate = state.isUpdateAvailable
+
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: hasUpdate ? "arrow.down.circle.fill" : "checkmark.seal.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(hasUpdate ? GlassTheme.success : GlassTheme.accent)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(hasUpdate ? "New Version Available" : "Software Update")
+                        .font(.title3.weight(.semibold))
+                    Text("Source: GitHub Releases (kobenguyent/KobeanSQL)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    Task { await state.checkForUpdates(manual: true) }
+                } label: {
+                    if state.isCheckingForUpdates {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Check Now", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .controlSize(.small)
+                .disabled(state.isCheckingForUpdates)
+            }
+
+            Divider()
+
+            // Version comparison summary box
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("INSTALLED VERSION")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("v\(state.currentAppVersion)")
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+
+                Image(systemName: "arrow.right")
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LATEST GITHUB RELEASE")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(latest.map { "v\($0)" } ?? (state.isCheckingForUpdates ? "Checking…" : "Unknown"))
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundStyle(hasUpdate ? GlassTheme.success : .primary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(hasUpdate ? GlassTheme.success.opacity(0.12) : Color.secondary.opacity(0.08))
+                )
+            }
+
+            if let err = state.updateCheckError {
+                Label(err, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(GlassTheme.danger)
+            }
+
+            if let assetName = updates.cachedAssetName {
+                HStack(spacing: 6) {
+                    Image(systemName: "shippingbox.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Asset: \(assetName)")
+                        .font(.system(size: 11, design: .monospaced))
+                    if let size = updates.cachedAssetSize, size > 0 {
+                        Text("(\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let checkedAt = updates.lastCheckedAt {
+                        Text("Checked \(checkedAt, style: .relative) ago")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+
+            // Release Notes
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(updates.cachedReleaseName ?? "Release Notes")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button("View on GitHub ↗") {
+                        state.openReleasePage()
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                }
+
+                ScrollView {
+                    Text(
+                        (updates.cachedReleaseNotes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                            ? updates.cachedReleaseNotes!
+                            : (hasUpdate
+                                ? "A new release of KobeanSQL is available on GitHub Releases."
+                                : "You are running the latest version of KobeanSQL (\(state.currentAppVersion)).")
+                    )
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                }
+                .frame(minHeight: 130, maxHeight: 200)
+                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            // Download progress / error state
+            switch state.updateDownloadState {
+            case .idle:
+                EmptyView()
+            case .downloading(let progress):
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Downloading update from GitHub Releases…")
+                            .font(.caption.weight(.medium))
+                        Spacer()
+                        Text("\(Int(progress * 100))%")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    }
+                    ProgressView(value: progress, total: 1.0)
+                }
+            case .ready(let fileURL):
+                Label("Downloaded \(fileURL.lastPathComponent) — ready to install & relaunch!", systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GlassTheme.success)
+            case .failed(let msg):
+                Label(msg, systemImage: "xmark.octagon.fill")
+                    .font(.caption)
+                    .foregroundStyle(GlassTheme.danger)
+            }
+
+            Divider()
+
+            HStack(spacing: 8) {
+                if hasUpdate {
+                    Button("Skip This Version") {
+                        state.ignoreCurrentUpdate()
+                    }
+                    .controlSize(.small)
+
+                    Button("Remind Me Later") {
+                        state.dismissUpdateReminder()
+                        dismiss()
+                    }
+                    .controlSize(.small)
+                }
+
+                Spacer()
+
+                Button("Close") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                if hasUpdate {
+                    if case .ready = state.updateDownloadState {
+                        Button {
+                            state.installReadyUpdate()
+                        } label: {
+                            Label("Install & Relaunch Now", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(GlassTheme.success)
+                        .keyboardShortcut(.defaultAction)
+                    } else {
+                        Button {
+                            Task { await state.downloadAndInstallUpdate() }
+                        } label: {
+                            Label("Download & Install Update", systemImage: "arrow.down.to.line")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(GlassTheme.accent)
+                        .disabled(isDownloading)
+                        .keyboardShortcut(.defaultAction)
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .frame(width: 580)
+    }
+
+    private var isDownloading: Bool {
+        if case .downloading = state.updateDownloadState { return true }
+        return false
     }
 }
 

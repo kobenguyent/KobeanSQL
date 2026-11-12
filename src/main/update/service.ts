@@ -170,7 +170,10 @@ export function createUpdateService(): UpdateService {
     if (!assets || assets.length === 0) return undefined
     const pattern = PLATFORM_ASSET_PATTERNS[process.platform]
     if (!pattern) return undefined
-    const eligible = assets.filter((a) => pattern.test(a.name))
+    const allEligible = assets.filter((a) => pattern.test(a.name))
+    // Prefer Electron release assets over the standalone SwiftUI native macOS bundle when both are attached
+    const nonNativeEligible = allEligible.filter((a) => !/macos-native/i.test(a.name))
+    const eligible = nonNativeEligible.length > 0 ? nonNativeEligible : allEligible
     if (eligible.length === 0) return undefined
 
     if (process.platform === 'darwin') {

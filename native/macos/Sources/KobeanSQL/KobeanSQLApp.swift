@@ -38,6 +38,12 @@ struct KobeanSQLNativeApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    Task { await state.checkForUpdates(manual: true) }
+                }
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("New Query Tab") {
                     state.newTab()
