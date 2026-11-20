@@ -5,7 +5,6 @@ import KobeanSQLCore
 
 struct ResultsPaneView: View {
     @Bindable var state: AppState
-    @Environment(\.colorScheme) private var colorScheme
     @State private var searchText: String = ""
     @State private var inspectedCell: String?
     @State private var selectedRowIndices: IndexSet = []
@@ -20,51 +19,33 @@ struct ResultsPaneView: View {
     var body: some View {
         let tab = state.activeTab
         let targetTable = state.activeTargetTable
+        let displayedRows: [[CellValue]] = tab?.activeResult.map { filteredRows($0) } ?? []
 
         VStack(spacing: 6) {
-            // Responsive Floating Liquid Glass Results & CRUD Toolbar
-            LiquidGlassContainer(spacing: 8) {
-                ViewThatFits(in: .horizontal) {
+            // Single-pass constant-height Floating Liquid Glass Results & CRUD Toolbar (zero ViewThatFits jank, zero nested glass)
+            HStack(spacing: 8) {
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         statusPillsRow(tab: tab, targetTable: targetTable)
-                            .fixedSize(horizontal: true, vertical: false)
-                        Spacer(minLength: 8)
-                        if let result = tab?.activeResult, !result.columns.isEmpty {
-                            if let table = targetTable, table.kind == .table {
-                                crudActionRow(result: result, table: table)
-                                    .fixedSize(horizontal: true, vertical: false)
-                                Divider()
-                                    .frame(height: 16)
-                            }
-                            filterAndExportRow(result: result, targetTable: targetTable)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                    }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                statusPillsRow(tab: tab, targetTable: targetTable)
-                                    .fixedSize(horizontal: true, vertical: false)
-                            }
-                            Spacer(minLength: 6)
-                            if let result = tab?.activeResult, !result.columns.isEmpty {
-                                filterAndExportRow(result: result, targetTable: targetTable)
-                                    .fixedSize(horizontal: true, vertical: false)
-                            }
-                        }
-                        if let result = tab?.activeResult, !result.columns.isEmpty, let table = targetTable, table.kind == .table {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                crudActionRow(result: result, table: table)
-                                    .fixedSize(horizontal: true, vertical: false)
-                            }
+                        if let result = tab?.activeResult, !result.columns.isEmpty,
+                           let table = targetTable, table.kind == .table {
+                            Divider()
+                                .frame(height: 15)
+                            crudActionRow(result: result, rows: displayedRows, table: table)
                         }
                     }
+                    .padding(.vertical, 1)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .liquidGlassBar(cornerRadius: 12)
+
+                if let result = tab?.activeResult, !result.columns.isEmpty {
+                    filterAndExportRow(result: result, rows: displayedRows, targetTable: targetTable)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .liquidGlassBar(cornerRadius: 12)
 
             // Body
             if let errorMessage = tab?.errorMessage {
@@ -81,7 +62,7 @@ struct ResultsPaneView: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .liquidGlassCard(cornerRadius: 12, tint: GlassTheme.danger, isSelected: true)
+                .frostedSurface(cornerRadius: 12, tint: GlassTheme.danger, isSelected: true)
             } else if let result = tab?.activeResult {
                 if result.columns.isEmpty {
                     VStack(spacing: 10) {
@@ -98,7 +79,7 @@ struct ResultsPaneView: View {
                     .liquidGlassCard(cornerRadius: 16, tint: GlassTheme.success)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    let rows = filteredRows(result)
+                    let rows = displayedRows
                     let fkMap = foreignKeyMap(for: result, targetTable: targetTable)
                     VirtualizedTableGrid(
                         columns: result.columns,
@@ -162,13 +143,7 @@ struct ResultsPaneView: View {
                             state.setStatus("Copied bulk INSERT SQL (\(target.count) row(s))", level: .success)
                         }
                     )
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(GlassTheme.specularRimGradient(for: colorScheme), lineWidth: 0.85)
-                            .allowsHitTesting(false)
-                    )
+                    .frostedContentPane(cornerRadius: 12)
                 }
             } else {
                 VStack(spacing: 12) {
@@ -195,7 +170,7 @@ struct ResultsPaneView: View {
                     .controlSize(.small)
                 }
                 .padding(28)
-                .liquidGlassCard(cornerRadius: 18)
+                .frostedSurface(cornerRadius: 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -216,7 +191,7 @@ struct ResultsPaneView: View {
         }
         .sheet(isPresented: $showingBulkUpdateSheet) {
             if let table = targetTable, let result = tab?.activeResult {
-                let rows = selectedRows(from: filteredRows(result))
+                let rows = selectedRows(from: displayedRows)
                 if !rows.isEmpty {
                     BulkUpdateSheetView(state: state, table: table, columns: result.columns, targetRows: rows)
                 }
@@ -224,7 +199,7 @@ struct ResultsPaneView: View {
         }
         .sheet(isPresented: $showingBulkDeleteSheet) {
             if let table = targetTable, let result = tab?.activeResult {
-                let rows = selectedRows(from: filteredRows(result))
+                let rows = selectedRows(from: displayedRows)
                 if !rows.isEmpty {
                     BulkDeleteConfirmSheetView(
                         state: state,
@@ -243,9 +218,8 @@ struct ResultsPaneView: View {
             if let table = targetTable,
                let result = tab?.activeResult,
                let idx = editingRowIndex {
-                let rows = filteredRows(result)
-                if idx < rows.count {
-                    RowEditorSheetView(state: state, table: table, columns: result.columns, originalRow: rows[idx])
+                if idx < displayedRows.count {
+                    RowEditorSheetView(state: state, table: table, columns: result.columns, originalRow: displayedRows[idx])
                 }
             }
         }
@@ -278,7 +252,7 @@ struct ResultsPaneView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .liquidGlassPill(tint: GlassTheme.color(for: state.activeConnection?.type ?? .sqlite), emphasized: true)
+                .frostedPill(tint: GlassTheme.color(for: state.activeConnection?.type ?? .sqlite), isSelected: true)
                 .fixedSize(horizontal: true, vertical: false)
                 .help("Active target table: \(targetTable.name)")
             }
@@ -304,7 +278,7 @@ struct ResultsPaneView: View {
                     .lineLimit(1)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 3)
-                    .liquidGlassPill(tint: GlassTheme.accent)
+                    .frostedPill(tint: GlassTheme.accent)
                     .fixedSize(horizontal: true, vertical: false)
 
                 if let sortIdx = sortColumnIndex, sortIdx < result.columns.count {
@@ -323,7 +297,7 @@ struct ResultsPaneView: View {
                         }
                         .padding(.horizontal, 9)
                         .padding(.vertical, 3)
-                        .liquidGlassPill(tint: GlassTheme.accent, interactive: true, emphasized: true)
+                        .frostedPill(tint: GlassTheme.accent, isSelected: true, hoverable: true)
                         .fixedSize(horizontal: true, vertical: false)
                     }
                     .buttonStyle(.plain)
@@ -346,7 +320,7 @@ struct ResultsPaneView: View {
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 3)
-                    .liquidGlassPill(tint: GlassTheme.success, emphasized: true)
+                    .frostedPill(tint: GlassTheme.success, isSelected: true)
                     .fixedSize(horizontal: true, vertical: false)
                 }
 
@@ -362,7 +336,7 @@ struct ResultsPaneView: View {
                     .foregroundStyle(GlassTheme.warning)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .liquidGlassPill(tint: GlassTheme.warning)
+                    .frostedPill(tint: GlassTheme.warning)
                     .fixedSize(horizontal: true, vertical: false)
                     .help(notice)
                 }
@@ -371,18 +345,16 @@ struct ResultsPaneView: View {
     }
 
     @ViewBuilder
-    private func crudActionRow(result: QueryResult, table: TableInfo) -> some View {
-        let rows = filteredRows(result)
+    private func crudActionRow(result: QueryResult, rows: [[CellValue]], table: TableInfo) -> some View {
         let selCount = selectedRowIndices.count
 
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Button {
                 showingInsertSheet = true
             } label: {
                 Label("Insert", systemImage: "plus")
             }
-            .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
-            .controlSize(.small)
+            .frostedControlButton(prominent: true, tint: GlassTheme.accent)
             .fixedSize(horizontal: true, vertical: false)
             .help("Insert a single row into \(table.name)")
 
@@ -391,8 +363,7 @@ struct ResultsPaneView: View {
             } label: {
                 Label("Bulk Insert…", systemImage: "square.stack.3d.up.badge.a.fill")
             }
-            .liquidGlassButton()
-            .controlSize(.small)
+            .frostedControlButton()
             .fixedSize(horizontal: true, vertical: false)
             .help("Bulk insert multiple rows (Grid, CSV/TSV, or JSON) into \(table.name)")
 
@@ -405,8 +376,7 @@ struct ResultsPaneView: View {
             } label: {
                 Label(selCount > 1 ? "Bulk Edit (\(selCount))" : "Edit", systemImage: "pencil")
             }
-            .liquidGlassButton()
-            .controlSize(.small)
+            .frostedControlButton()
             .disabled(selectedRowIndices.isEmpty)
             .fixedSize(horizontal: true, vertical: false)
             .help(selCount > 1 ? "Batch edit \(selCount) selected rows" : "Edit selected row")
@@ -424,8 +394,7 @@ struct ResultsPaneView: View {
             } label: {
                 Label(selCount > 1 ? "Duplicate (\(selCount))" : "Duplicate", systemImage: "plus.square.on.square")
             }
-            .liquidGlassButton()
-            .controlSize(.small)
+            .frostedControlButton()
             .disabled(selectedRowIndices.isEmpty)
             .fixedSize(horizontal: true, vertical: false)
             .help(selCount > 1 ? "Bulk duplicate \(selCount) selected rows" : "Duplicate selected row")
@@ -435,8 +404,7 @@ struct ResultsPaneView: View {
             } label: {
                 Label(selCount > 1 ? "Delete (\(selCount))" : "Delete", systemImage: "trash")
             }
-            .liquidGlassButton(tint: GlassTheme.danger)
-            .controlSize(.small)
+            .frostedControlButton(tint: GlassTheme.danger)
             .disabled(selectedRowIndices.isEmpty)
             .fixedSize(horizontal: true, vertical: false)
             .help("Delete selected row(s) with SQL preview")
@@ -444,9 +412,7 @@ struct ResultsPaneView: View {
     }
 
     @ViewBuilder
-    private func filterAndExportRow(result: QueryResult, targetTable: TableInfo?) -> some View {
-        let rows = filteredRows(result)
-
+    private func filterAndExportRow(result: QueryResult, rows: [[CellValue]], targetTable: TableInfo?) -> some View {
         HStack(spacing: 6) {
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass")
@@ -468,8 +434,8 @@ struct ResultsPaneView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .frame(width: 146)
-            .liquidGlassPill()
+            .frame(width: 140)
+            .frostedPill()
 
             Menu {
                 let targetRows = selectedRowIndices.isEmpty ? rows : selectedRows(from: rows)
@@ -514,10 +480,13 @@ struct ResultsPaneView: View {
                 }
             } label: {
                 Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .frostedPill(hoverable: true)
             }
-            .liquidGlassButton()
-            .controlSize(.small)
-            .frame(width: 34)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
             .help("Copy / Select / Export Rows (TSV, CSV, JSON, Bulk INSERT SQL)")
         }
     }

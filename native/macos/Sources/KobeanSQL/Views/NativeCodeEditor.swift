@@ -269,7 +269,7 @@ private struct AutocompletePopupListView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
+            LazyVStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(suggestions.enumerated()), id: \.element.id) { idx, item in
                     let isSelected = idx == selectedIndex
                     HStack(spacing: 8) {
@@ -278,7 +278,7 @@ private struct AutocompletePopupListView: View {
                             .foregroundStyle(badgeColor(for: item.kind))
                             .frame(width: 40, alignment: .center)
                             .padding(.vertical, 2)
-                            .liquidGlassPill(tint: badgeColor(for: item.kind))
+                            .frostedPill(tint: badgeColor(for: item.kind))
 
                         Text(item.displayText)
                             .font(.system(size: 12, weight: isSelected ? .semibold : .regular, design: .monospaced))
@@ -293,11 +293,11 @@ private struct AutocompletePopupListView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .liquidGlassCard(
+                    .frostedSurface(
                         cornerRadius: 7,
                         tint: isSelected ? GlassTheme.accent : nil,
                         isSelected: isSelected,
-                        interactive: true
+                        hoverable: true
                     )
                     .contentShape(Rectangle())
                     .onTapGesture {

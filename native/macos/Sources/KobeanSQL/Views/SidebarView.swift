@@ -11,7 +11,7 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Floating Liquid Glass top action bar
+            // Top Liquid Glass action cluster (1 glass layer deep directly over the native sidebar)
             LiquidGlassContainer(spacing: 6) {
                 VStack(spacing: 6) {
                     HStack(spacing: 6) {
@@ -56,12 +56,13 @@ struct SidebarView: View {
                     .liquidGlassButton(tint: GlassTheme.accent)
                     .controlSize(.small)
                 }
-                .padding(10)
-                .liquidGlassBar(cornerRadius: 14)
             }
             .padding(.horizontal, 10)
             .padding(.top, 8)
-            .padding(.bottom, 4)
+            .padding(.bottom, 6)
+
+            Divider()
+                .opacity(0.45)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -78,52 +79,50 @@ struct SidebarView: View {
                                 .foregroundStyle(.secondary)
                                 .padding(10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .liquidGlassCard(cornerRadius: 10)
+                                .frostedSurface(cornerRadius: 10)
                         } else {
-                            LiquidGlassContainer(spacing: 6) {
-                                VStack(spacing: 6) {
-                                    ForEach(state.connections) { conn in
-                                ConnectionRowView(
-                                    conn: conn,
-                                    isConnected: state.connectedIDs.contains(conn.id),
-                                    isConnecting: state.connectingIDs.contains(conn.id),
-                                    isActive: state.activeTab?.connectionID == conn.id,
-                                    version: state.serverVersions[conn.id],
-                                    onSelect: {
-                                        state.activeTab?.connectionID = conn.id
-                                        state.activeTab?.database = state.selectedDatabaseByConnection[conn.id] ?? conn.database
-                                        if DemoDatabaseCatalog.isDemo(conn) || conn.id.hasPrefix("demo-") {
-                                            let preset = DemoDatabaseCatalog.preset(for: conn.type)
-                                            state.activeTab?.title = "\(conn.type.displayName) Demo"
-                                            state.activeTab?.sql = preset.sampleQuery
-                                        }
-                                        Task {
-                                            if !state.connectedIDs.contains(conn.id) {
-                                                await state.connect(conn)
-                                            }
+                            LazyVStack(spacing: 6) {
+                                ForEach(state.connections) { conn in
+                                    ConnectionRowView(
+                                        conn: conn,
+                                        isConnected: state.connectedIDs.contains(conn.id),
+                                        isConnecting: state.connectingIDs.contains(conn.id),
+                                        isActive: state.activeTab?.connectionID == conn.id,
+                                        version: state.serverVersions[conn.id],
+                                        onSelect: {
+                                            state.activeTab?.connectionID = conn.id
+                                            state.activeTab?.database = state.selectedDatabaseByConnection[conn.id] ?? conn.database
                                             if DemoDatabaseCatalog.isDemo(conn) || conn.id.hasPrefix("demo-") {
-                                                await state.runActiveQuery()
+                                                let preset = DemoDatabaseCatalog.preset(for: conn.type)
+                                                state.activeTab?.title = "\(conn.type.displayName) Demo"
+                                                state.activeTab?.sql = preset.sampleQuery
                                             }
-                                        }
-                                    },
-                                    onToggleConnect: {
-                                        Task {
-                                            if state.connectedIDs.contains(conn.id) {
-                                                await state.disconnect(conn.id)
-                                            } else {
-                                                await state.connect(conn)
+                                            Task {
+                                                if !state.connectedIDs.contains(conn.id) {
+                                                    await state.connect(conn)
+                                                }
+                                                if DemoDatabaseCatalog.isDemo(conn) || conn.id.hasPrefix("demo-") {
+                                                    await state.runActiveQuery()
+                                                }
                                             }
+                                        },
+                                        onToggleConnect: {
+                                            Task {
+                                                if state.connectedIDs.contains(conn.id) {
+                                                    await state.disconnect(conn.id)
+                                                } else {
+                                                    await state.connect(conn)
+                                                }
+                                            }
+                                        },
+                                        onEdit: {
+                                            state.editingConnection = conn
+                                            state.showingConnectionSheet = true
+                                        },
+                                        onDelete: {
+                                            state.deleteConnection(conn.id)
                                         }
-                                    },
-                                    onEdit: {
-                                        state.editingConnection = conn
-                                        state.showingConnectionSheet = true
-                                    },
-                                    onDelete: {
-                                        state.deleteConnection(conn.id)
-                                    }
-                                )
-                            }
+                                    )
                                 }
                             }
                         }
@@ -134,7 +133,7 @@ struct SidebarView: View {
                         Divider()
 
                         VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
+                            HStack(spacing: 6) {
                                 Text("SCHEMA — \(conn.name.uppercased())")
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(.secondary)
@@ -145,10 +144,8 @@ struct SidebarView: View {
                                     } label: {
                                         Image(systemName: "plus")
                                             .font(.system(size: 10, weight: .bold))
-                                            .frame(width: 20, height: 20)
                                     }
-                                    .buttonStyle(.plain)
-                                    .liquidGlass(.clear, interactive: true, in: Circle())
+                                    .frostedControlButton(circular: true)
                                     .help("Create New Table")
                                 }
                                 Button {
@@ -162,10 +159,8 @@ struct SidebarView: View {
                                 } label: {
                                     Image(systemName: "arrow.clockwise")
                                         .font(.system(size: 10, weight: .semibold))
-                                        .frame(width: 20, height: 20)
                                 }
-                                .buttonStyle(.plain)
-                                .liquidGlass(.clear, interactive: true, in: Circle())
+                                .frostedControlButton(circular: true)
                                 .help("Refresh Schema")
                             }
                             .padding(.horizontal, 4)
@@ -204,7 +199,7 @@ struct SidebarView: View {
                             }
                             .padding(.horizontal, 9)
                             .padding(.vertical, 5)
-                            .liquidGlassPill()
+                            .frostedPill()
 
                             let tables = filteredTables(for: conn.id)
                             if tables.isEmpty {
@@ -213,7 +208,7 @@ struct SidebarView: View {
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 4)
                             } else {
-                                VStack(alignment: .leading, spacing: 3) {
+                                LazyVStack(alignment: .leading, spacing: 3) {
                                     ForEach(tables) { table in
                                         let isExpanded = expandedTables.contains(table.id)
                                         VStack(alignment: .leading, spacing: 2) {
@@ -256,7 +251,12 @@ struct SidebarView: View {
                                             }
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 5)
-                                            .liquidGlassCard(cornerRadius: 8, tint: isExpanded ? GlassTheme.color(for: conn.type) : nil, isSelected: isExpanded, interactive: true)
+                                            .frostedSurface(
+                                                cornerRadius: 8,
+                                                tint: isExpanded ? GlassTheme.color(for: conn.type) : nil,
+                                                isSelected: isExpanded,
+                                                hoverable: true
+                                            )
                                             .contextMenu {
                                                 Button("Preview Rows") {
                                                     Task { await state.previewTable(table, connectionID: conn.id, inNewTab: false) }
@@ -344,32 +344,34 @@ struct SidebarView: View {
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 4)
 
-                            ForEach(state.savedQueries) { sq in
-                                Button {
-                                    state.activeTab?.sql = sq.sql
-                                    state.activeTab?.title = sq.name
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "bookmark.fill")
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(GlassTheme.accent)
-                                        Text(sq.name)
-                                            .font(.system(size: 12))
-                                            .lineLimit(1)
-                                        Spacer()
+                            LazyVStack(spacing: 5) {
+                                ForEach(state.savedQueries) { sq in
+                                    Button {
+                                        state.activeTab?.sql = sq.sql
+                                        state.activeTab?.title = sq.name
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "bookmark.fill")
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(GlassTheme.accent)
+                                            Text(sq.name)
+                                                .font(.system(size: 12))
+                                                .lineLimit(1)
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 9)
+                                        .padding(.vertical, 6)
+                                        .frostedSurface(cornerRadius: 8, hoverable: true)
                                     }
-                                    .padding(.horizontal, 9)
-                                    .padding(.vertical, 6)
-                                    .liquidGlassCard(cornerRadius: 8, interactive: true)
-                                }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button("Open in New Tab") {
-                                        state.newTab(title: sq.name, sql: sq.sql)
-                                    }
-                                    Divider()
-                                    Button("Delete", role: .destructive) {
-                                        state.deleteSavedQuery(sq.id)
+                                    .buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button("Open in New Tab") {
+                                            state.newTab(title: sq.name, sql: sq.sql)
+                                        }
+                                        Divider()
+                                        Button("Delete", role: .destructive) {
+                                            state.deleteSavedQuery(sq.id)
+                                        }
                                     }
                                 }
                             }
@@ -379,7 +381,7 @@ struct SidebarView: View {
                 .padding(10)
             }
         }
-        .background(VisualEffectBackground(material: .sidebar, blendingMode: .behindWindow))
+        .sidebarGlassBackdrop()
         .sheet(isPresented: $showingCreateTableSheet) {
             CreateTableSheetView(state: state)
         }
@@ -415,10 +417,17 @@ private struct ConnectionRowView: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
-                Circle()
-                    .fill(isConnected ? GlassTheme.success : (GlassTheme.color(hex: conn.color) ?? .secondary.opacity(0.4)))
-                    .frame(width: 8, height: 8)
-                    .shadow(color: isConnected ? GlassTheme.success.opacity(0.75) : .clear, radius: 4)
+                ZStack {
+                    if isConnected {
+                        Circle()
+                            .fill(GlassTheme.success.opacity(0.28))
+                            .frame(width: 13, height: 13)
+                    }
+                    Circle()
+                        .fill(isConnected ? GlassTheme.success : (GlassTheme.color(hex: conn.color) ?? .secondary.opacity(0.4)))
+                        .frame(width: 7, height: 7)
+                }
+                .frame(width: 13, height: 13)
 
                 Image(systemName: conn.type.symbolName)
                     .font(.system(size: 12))
@@ -433,7 +442,7 @@ private struct ConnectionRowView: View {
                             .font(.system(size: 9, weight: .semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1.5)
-                            .liquidGlassPill(tint: GlassTheme.color(for: conn.type))
+                            .frostedPill(tint: GlassTheme.color(for: conn.type))
                     }
                     Text(version ?? conn.subtitle)
                         .font(.system(size: 10))
@@ -450,11 +459,11 @@ private struct ConnectionRowView: View {
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
-            .liquidGlassCard(
+            .frostedSurface(
                 cornerRadius: 10,
                 tint: isActive ? GlassTheme.color(for: conn.type) : nil,
                 isSelected: isActive,
-                interactive: true
+                hoverable: true
             )
             .contentShape(Rectangle())
         }

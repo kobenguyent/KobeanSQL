@@ -54,7 +54,7 @@ struct HistorySheetView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    VStack(spacing: 8) {
+                    LazyVStack(spacing: 8) {
                         ForEach(filtered) { item in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack {
@@ -62,7 +62,7 @@ struct HistorySheetView: View {
                                         .font(.caption.weight(.semibold))
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 2)
-                                        .liquidGlassPill(tint: GlassTheme.accent)
+                                        .frostedPill(tint: GlassTheme.accent)
 
                                     if let db = item.database, !db.isEmpty {
                                         Text(db)
@@ -94,7 +94,7 @@ struct HistorySheetView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .padding(10)
-                            .liquidGlassCard(cornerRadius: 10, interactive: true)
+                            .frostedSurface(cornerRadius: 10, hoverable: true)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 state.activeTab?.sql = item.query

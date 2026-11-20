@@ -64,39 +64,37 @@ struct ConnectionSheetView: View {
                                 Text(category.label.uppercased())
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundStyle(.tertiary)
-                                LiquidGlassContainer(spacing: 6) {
-                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 6)], spacing: 6) {
-                                        ForEach(category.types) { dbType in
-                                            let selected = draft.type == dbType
-                                            Button {
-                                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                                                    applyEngineSelection(dbType)
-                                                    detectionBanner = nil
-                                                }
-                                            } label: {
-                                                HStack(spacing: 5) {
-                                                    Image(systemName: dbType.symbolName)
-                                                        .font(.system(size: 11))
-                                                        .foregroundStyle(selected ? GlassTheme.color(for: dbType) : .secondary)
-                                                    Text(dbType.displayName)
-                                                        .font(.system(size: 11, weight: selected ? .semibold : .medium))
-                                                        .lineLimit(1)
-                                                    Spacer(minLength: 0)
-                                                }
-                                                .padding(.horizontal, 9)
-                                                .padding(.vertical, 7)
-                                                .liquidGlassCard(
-                                                    cornerRadius: 9,
-                                                    tint: selected ? GlassTheme.color(for: dbType) : nil,
-                                                    isSelected: selected,
-                                                    interactive: dbType.isSupportedNatively
-                                                )
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 6)], spacing: 6) {
+                                    ForEach(category.types) { dbType in
+                                        let selected = draft.type == dbType
+                                        Button {
+                                            withAnimation(.easeOut(duration: 0.16)) {
+                                                applyEngineSelection(dbType)
+                                                detectionBanner = nil
                                             }
-                                            .buttonStyle(.plain)
-                                            .disabled(!dbType.isSupportedNatively)
-                                            .opacity(dbType.isSupportedNatively ? 1.0 : 0.38)
-                                            .help(dbType.isSupportedNatively ? dbType.displayName : "\(dbType.displayName) requires a proprietary driver not yet bundled in the native build")
+                                        } label: {
+                                            HStack(spacing: 5) {
+                                                Image(systemName: dbType.symbolName)
+                                                    .font(.system(size: 11))
+                                                    .foregroundStyle(selected ? GlassTheme.color(for: dbType) : .secondary)
+                                                Text(dbType.displayName)
+                                                    .font(.system(size: 11, weight: selected ? .semibold : .medium))
+                                                    .lineLimit(1)
+                                                Spacer(minLength: 0)
+                                            }
+                                            .padding(.horizontal, 9)
+                                            .padding(.vertical, 7)
+                                            .frostedSurface(
+                                                cornerRadius: 9,
+                                                tint: selected ? GlassTheme.color(for: dbType) : nil,
+                                                isSelected: selected,
+                                                hoverable: dbType.isSupportedNatively
+                                            )
                                         }
+                                        .buttonStyle(.plain)
+                                        .disabled(!dbType.isSupportedNatively)
+                                        .opacity(dbType.isSupportedNatively ? 1.0 : 0.38)
+                                        .help(dbType.isSupportedNatively ? dbType.displayName : "\(dbType.displayName) requires a proprietary driver not yet bundled in the native build")
                                     }
                                 }
                             }
