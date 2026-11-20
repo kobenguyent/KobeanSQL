@@ -1,3 +1,10 @@
+# [1.37.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.36.0...v1.37.0) (2026-11-20)
+
+
+### Features
+
+* liquid glass ([7f9a80c](https://github.com/kobenguyent/KobeanSQL/commit/7f9a80c128774897196531b4cd9e289f1051f3a3))
+
 # [1.36.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.35.0...v1.36.0) (2026-11-20)
 
 
