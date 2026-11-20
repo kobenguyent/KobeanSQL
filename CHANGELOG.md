@@ -1,3 +1,10 @@
+# [1.36.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.35.0...v1.36.0) (2026-11-20)
+
+
+### Features
+
+* add several feats ([9b8d49e](https://github.com/kobenguyent/KobeanSQL/commit/9b8d49e8f31bc0e1b04ca7a330d21fb78df8c16b))
+
 # [1.35.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.34.0...v1.35.0) (2026-11-12)
 
 
