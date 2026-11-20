@@ -1,3 +1,10 @@
+# [1.35.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.34.0...v1.35.0) (2026-11-12)
+
+
+### Features
+
+* auto update ([958188d](https://github.com/kobenguyent/KobeanSQL/commit/958188df31dd44e67220ce0a2df52f55e0037732))
+
 # [1.34.0](https://github.com/kobenguyent/KobeanSQL/compare/v1.33.0...v1.34.0) (2026-11-10)
 
 
