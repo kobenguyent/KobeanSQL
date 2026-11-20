@@ -20,7 +20,9 @@ import type {
   QueryHistoryEntry,
   AppSettings,
   UpdateStatus,
-  ForeignKeyInfo
+  ForeignKeyInfo,
+  EngineDetectionResult,
+  AutoDisconnectEventPayload
 } from '../types'
 import type { DatabaseSchema } from '@renderer/types/schema'
 import { buildProcedureCallSql, buildSelectTableSql, quoteIdentifier } from '../sql/dsl'
@@ -75,8 +77,9 @@ declare global {
       getConnections(): Promise<ConnectionConfig[]>
       saveConnection(config: ConnectionConfig): Promise<{ success: boolean }>
       deleteConnection(id: string): Promise<{ success: boolean }>
-      testConnection(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType }>
-      connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType }>
+      detectEngine?(config: Partial<ConnectionConfig>): Promise<EngineDetectionResult | null>
+      testConnection(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType; resolvedConfig?: ConnectionConfig; detectionDetail?: string }>
+      connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType; resolvedConfig?: ConnectionConfig; detectionDetail?: string }>
       disconnect(id: string): Promise<{ success: boolean }>
       isConnected(id: string): Promise<boolean>
       query(connectionId: string, sql: string, params?: unknown[]): Promise<QueryResult>
@@ -141,6 +144,7 @@ declare global {
       downloadUpdate(): Promise<UpdateStatus | null>
       installUpdate(): Promise<{ success: boolean; error?: string }>
       onConnectionLost(callback: (connectionId: string) => void): () => void
+      onAutoDisconnected?(callback: (payload: AutoDisconnectEventPayload) => void): () => void
 
       // Connection logs
       addConnectionLog(entry: {
@@ -249,6 +253,7 @@ interface AppState {
   connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string }>
   disconnect(id: string): Promise<void>
   handleConnectionLost(id: string): void
+  handleAutoDisconnected(payload: AutoDisconnectEventPayload): void
   loadConnectionCapabilities(connectionId: string, type: DatabaseType): Promise<void>
   loadDatabases(connectionId: string): Promise<void>
   loadTables(connectionId: string, database: string): Promise<void>
@@ -316,6 +321,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   queryHistory: [],
   settings: {
     queryLimit: 100,
+    autoDisconnectEnabled: true,
+    autoDisconnectMinutes: 15,
     updates: { autoCheckEnabled: true, checkIntervalHours: 24, cache: {} }
   },
   updateStatus: null,
@@ -354,9 +361,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (result.success) {
       const { connectedIds, schema, connections } = get()
       const nextIds = new Set(connectedIds).add(config.id)
-      const nextConnections = result.detectedType && result.detectedType !== config.type
-        ? connections.map(c => c.id === config.id ? { ...c, type: result.detectedType! } : c)
+      const resolvedConn = result.resolvedConfig ?? (result.detectedType && result.detectedType !== config.type ? { ...config, type: result.detectedType } : null)
+      const nextConnections = resolvedConn
+        ? connections.map(c => c.id === config.id ? { ...c, ...resolvedConn } : c)
         : connections
+      if (resolvedConn && connections.some(c => c.id === config.id)) {
+        void window.db.saveConnection(resolvedConn).catch(() => {})
+      }
       const nextSchema = { ...schema }
       if (!nextSchema[config.id]) {
         nextSchema[config.id] = {
@@ -369,7 +380,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const finalType = result.detectedType || config.type
       await get().loadConnectionCapabilities(config.id, finalType)
       const typeLabel = finalType === 'mariadb' ? 'MariaDB' : finalType.charAt(0).toUpperCase() + finalType.slice(1)
-      get().setStatus(`Connected to ${config.name} (${typeLabel})`, 'success')
+      const statusMsg = result.detectedType && result.detectedType !== config.type
+        ? `Connected to ${config.name} (auto-recognized ${typeLabel})`
+        : `Connected to ${config.name} (${typeLabel})`
+      get().setStatus(statusMsg, 'success')
       
       void window.db.addConnectionLog({ id: genId(), connectionId: config.id, connectionName: config.name, event: 'connected', timestamp: Date.now() }).catch(() => {})
       await get().loadDatabases(config.id)
@@ -412,6 +426,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     const conn = connections.find(c => c.id === id)
     get().setStatus(`Connection to ${conn?.name ?? id} was lost`, 'error')
     void window.db.addConnectionLog({ id: genId(), connectionId: id, connectionName: conn?.name ?? id, event: 'disconnected', timestamp: Date.now(), error: 'Connection lost' }).catch(() => {})
+  },
+
+  handleAutoDisconnected: (payload) => {
+    const id = payload.connectionId
+    invalidateConnectionCapabilityRequest(id)
+    const { connectedIds, schema, connectionVersions, connectionCapabilities, connections } = get()
+    const nextIds = new Set(connectedIds)
+    nextIds.delete(id)
+    const nextSchema = { ...schema }; delete nextSchema[id]
+    const nextVersions = { ...connectionVersions }; delete nextVersions[id]
+    const nextCapabilities = { ...connectionCapabilities }; delete nextCapabilities[id]
+    set({ connectedIds: nextIds, schema: nextSchema, connectionVersions: nextVersions, connectionCapabilities: nextCapabilities })
+    const conn = connections.find(c => c.id === id)
+    const label = conn?.name ?? id
+    get().setStatus(`${payload.reason}: ${label}`, 'warning')
+    void window.db.addConnectionLog({ id: genId(), connectionId: id, connectionName: label, event: 'disconnected', timestamp: Date.now(), error: payload.reason }).catch(() => {})
   },
 
   loadConnectionCapabilities: async (connectionId, type) => {
@@ -684,6 +714,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(s => ({ updateStatus: s.updateStatus ? { ...s.updateStatus, downloadState: 'downloading', downloadProgress: 0 } : null }))
     const s = await window.db.downloadUpdate()
     if (s) set({ updateStatus: s })
+    if (s?.downloadState === 'ready') {
+      await window.db.installUpdate()
+    }
   },
 
   installUpdate: async () => { await window.db.installUpdate() },
@@ -702,7 +735,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   }
 }))
 
-// Register listener
+// Register listeners
 if (typeof window !== 'undefined' && window.db?.onConnectionLost) {
   window.db.onConnectionLost((id: string) => useAppStore.getState().handleConnectionLost(id))
+}
+if (typeof window !== 'undefined' && window.db?.onAutoDisconnected) {
+  window.db.onAutoDisconnected((payload: AutoDisconnectEventPayload) =>
+    useAppStore.getState().handleAutoDisconnected(payload)
+  )
 }

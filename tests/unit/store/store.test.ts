@@ -40,6 +40,8 @@ describe('Connection Store (persistence)', () => {
   const settingsPath = path.join(os.tmpdir(), 'settings.json')
   const defaultSettings = {
     queryLimit: 100,
+    autoDisconnectEnabled: true,
+    autoDisconnectMinutes: 15,
     updates: {
       autoCheckEnabled: true,
       checkIntervalHours: 24,
@@ -288,7 +290,8 @@ describe('Connection Store (persistence)', () => {
           latestVersion: 'v1.9.0',
           releaseUrl: 'https://github.com/example',
           releaseName: undefined,
-          checkedAt: 12345
+          checkedAt: 12345,
+          downloadUrl: undefined
         }
       }
     })
@@ -330,6 +333,31 @@ describe('Connection Store (persistence)', () => {
         baseUrl: 'http://127.0.0.1:1234/v1',
         model: 'local-model'
       }
+    })
+  })
+
+  it('loadSettings sanitizes autoDisconnectEnabled and autoDisconnectMinutes bounds', async () => {
+    const { loadSettings } = await import('../../../src/main/store')
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ autoDisconnectEnabled: false, autoDisconnectMinutes: 999 }),
+      'utf-8'
+    )
+    expect(loadSettings()).toEqual({
+      ...defaultSettings,
+      autoDisconnectEnabled: false,
+      autoDisconnectMinutes: 240
+    })
+
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ autoDisconnectEnabled: 'invalid', autoDisconnectMinutes: 0 }),
+      'utf-8'
+    )
+    expect(loadSettings()).toEqual({
+      ...defaultSettings,
+      autoDisconnectEnabled: true,
+      autoDisconnectMinutes: 1
     })
   })
 })

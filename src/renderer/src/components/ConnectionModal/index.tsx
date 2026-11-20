@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useMemo } from 'react'
-import { X, CheckCircle, AlertCircle, Database } from 'lucide-react'
+import { X, CheckCircle, AlertCircle, Database, Sparkles } from 'lucide-react'
 import { useAppStore, genId } from '../../store'
 import type { ConnectionConfig, DatabaseType, DatabaseCategory } from '../../types'
 import { DB_DEFAULT_PORTS, DB_CATEGORY, DB_CATEGORY_LABELS } from '../../types'
-import { parseConnectionUriPreview } from '../../utils/connection-uri'
+import { detectEngineFromInput, parseConnectionUriPreview, type RendererEngineDetection } from '../../utils/connection-uri'
 import { useTranslation } from '../../hooks/useTranslation'
 
 interface Props {
@@ -12,22 +12,24 @@ interface Props {
 }
 
 interface ConnectionPersistenceActions {
-  connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType }>
+  connect(config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType; resolvedConfig?: ConnectionConfig }>
   saveConnection(config: ConnectionConfig): Promise<void>
 }
 
 export async function connectThenSaveConnection(
   config: ConnectionConfig,
   { connect, saveConnection }: ConnectionPersistenceActions
-): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType }> {
+): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType; resolvedConfig?: ConnectionConfig }> {
   const result = await connect(config)
   if (!result.success) {
     return result
   }
 
-  const finalConfig = result.detectedType && result.detectedType !== config.type
-    ? { ...config, type: result.detectedType }
-    : config
+  const finalConfig = result.resolvedConfig
+    ? { ...config, ...result.resolvedConfig }
+    : result.detectedType && result.detectedType !== config.type
+      ? { ...config, type: result.detectedType }
+      : config
 
   await saveConnection(finalConfig)
   return result
@@ -192,7 +194,9 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
     editConfig ? { ...editConfig } : defaultConfig()
   )
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null)
+  const [detecting, setDetecting] = useState(false)
+  const [detectedBanner, setDetectedBanner] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<{ success: boolean; error?: string; message?: string } | null>(null)
   const [saving, setSaving] = useState(false)
 
   // Collect distinct existing categories for the datalist
@@ -214,7 +218,7 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
   const uriModeMissing = !isSQLite && connectionMode === 'uri' && !(config.connectionUri ?? '').trim()
   const disableConnectActions = uriModeInvalid || uriModeMissing
 
-  const handleTypeChange = (type: DatabaseType) => {
+  const handleTypeChange = useCallback((type: DatabaseType) => {
     const dbType = DB_TYPES.find((d) => d.value === type)
     setConfig((prev) => ({
       ...prev,
@@ -223,13 +227,120 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
       color: dbType?.color ?? prev.color
     }))
     setConnectionMode((prev) => (type === 'sqlite' ? 'manual' : prev))
+    setDetectedBanner(null)
     setTestResult(null)
-  }
+  }, [])
+
+  const applyEngineDetection = useCallback((detected: RendererEngineDetection, options?: { keepPort?: number }) => {
+    const dbType = DB_TYPES.find((d) => d.value === detected.engine)
+    setConfig((prev) => {
+      const next: Omit<ConnectionConfig, 'id'> = {
+        ...prev,
+        type: detected.engine,
+        color: dbType?.color ?? prev.color
+      }
+      if (detected.engine === 'sqlite') {
+        if (detected.filePath) next.filename = detected.filePath
+        next.port = undefined
+        next.ssl = false
+        next.connectionUri = ''
+      } else {
+        if (options?.keepPort !== undefined) {
+          next.port = options.keepPort
+        } else if (detected.suggestedPort !== undefined) {
+          next.port = detected.suggestedPort
+        } else if (prev.port === undefined || prev.port === DB_DEFAULT_PORTS[prev.type]) {
+          next.port = DB_DEFAULT_PORTS[detected.engine]
+        }
+        if (detected.suggestedSSL !== undefined) {
+          next.ssl = detected.suggestedSSL
+        }
+      }
+      return next
+    })
+    if (detected.engine === 'sqlite') {
+      setConnectionMode('manual')
+    }
+    setDetectedBanner(detected.detail)
+    setTestResult(null)
+  }, [])
 
   const update = (field: keyof Omit<ConnectionConfig, 'id'>, value: unknown) => {
     setConfig((prev) => ({ ...prev, [field]: value }))
     setTestResult(null)
   }
+
+  const handleUriChange = (rawUri: string) => {
+    update('connectionUri', rawUri)
+    const detected = detectEngineFromInput({ connectionUri: rawUri })
+    if (detected) {
+      applyEngineDetection(detected)
+    }
+  }
+
+  const handleHostChange = (rawHost: string) => {
+    const trimmed = rawHost.trim()
+    if (trimmed.includes('://')) {
+      const detected = detectEngineFromInput({ connectionUri: trimmed })
+      if (detected) {
+        if (detected.engine === 'sqlite') {
+          applyEngineDetection(detected)
+          return
+        }
+        setConfig((prev) => ({ ...prev, connectionUri: trimmed }))
+        setConnectionMode('uri')
+        applyEngineDetection(detected)
+        return
+      }
+    }
+    if ((trimmed.startsWith('/') || trimmed.startsWith('~/')) && /\.(sqlite3?|db|s3db|sl3)$/i.test(trimmed)) {
+      applyEngineDetection({ engine: 'sqlite', detail: 'Recognized SQLite database file path', filePath: trimmed })
+      return
+    }
+    update('host', rawHost)
+    const hostDetected = detectEngineFromInput({ host: trimmed })
+    if (hostDetected && hostDetected.engine !== config.type) {
+      applyEngineDetection(hostDetected)
+    }
+  }
+
+  const handlePortChange = (rawPort: string) => {
+    const parsedPort = parseInt(rawPort, 10) || undefined
+    update('port', parsedPort)
+    if (parsedPort) {
+      const detected = detectEngineFromInput({ port: parsedPort })
+      if (detected && detected.engine !== config.type) {
+        applyEngineDetection(detected, { keepPort: parsedPort })
+      }
+    }
+  }
+
+  const handleDetectEngine = useCallback(async () => {
+    setDetecting(true)
+    setTestResult(null)
+    try {
+      const fullConfig: Partial<ConnectionConfig> = { ...config }
+      const detected = window.db.detectEngine
+        ? await window.db.detectEngine(fullConfig)
+        : detectEngineFromInput({
+            connectionUri: config.connectionUri,
+            host: config.host,
+            port: config.port,
+            filename: config.filename
+          })
+      if (detected) {
+        applyEngineDetection(detected)
+        const label = DB_TYPES.find((d) => d.value === detected.engine)?.label ?? detected.engine
+        setTestResult({ success: true, message: `Auto-recognized ${label} — ${detected.detail}` })
+      } else {
+        setTestResult({ success: false, error: 'Could not automatically recognize the database engine at this endpoint.' })
+      }
+    } catch (err) {
+      setTestResult({ success: false, error: (err as Error).message })
+    } finally {
+      setDetecting(false)
+    }
+  }, [config, applyEngineDetection])
 
   const handleTest = useCallback(async () => {
     if (disableConnectActions) {
@@ -241,14 +352,29 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
     setTestResult(null)
     const fullConfig: ConnectionConfig = { id: editConfig?.id ?? genId(), ...config }
     const result = await window.db.testConnection(fullConfig)
-    
+
     if (result.success && result.detectedType && result.detectedType !== config.type) {
-      // If we detected a more specific engine (e.g. MariaDB), update the form state
-      handleTypeChange(result.detectedType)
+      if (result.resolvedConfig) {
+        const dbType = DB_TYPES.find((d) => d.value === result.detectedType)
+        setConfig((prev) => ({
+          ...prev,
+          ...result.resolvedConfig,
+          color: dbType?.color ?? prev.color
+        }))
+        setDetectedBanner(result.detectionDetail ?? `Auto-recognized ${dbType?.label ?? result.detectedType}`)
+      } else {
+        handleTypeChange(result.detectedType)
+      }
     }
 
+    const detectedLabel = result.detectedType
+      ? (DB_TYPES.find((d) => d.value === result.detectedType)?.label ?? result.detectedType)
+      : undefined
     setTestResult({
       success: result.success,
+      message: result.success && result.detectedType && result.detectedType !== config.type
+        ? `Auto-recognized ${detectedLabel} & connected successfully!`
+        : undefined,
       error: result.success ? undefined : (result.error || 'Connection failed')
     })
     setTesting(false)
@@ -312,7 +438,14 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
 
         <div className="modal-body">
           <div className="form-group">
-            <label className="form-label">{t('connection.dbType')}</label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <label className="form-label" style={{ marginBottom: 0 }}>{t('connection.dbType')}</label>
+              {detectedBanner && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--font-size-xs)', color: 'var(--accent)' }}>
+                  <Sparkles size={12} /> {detectedBanner}
+                </span>
+              )}
+            </div>
             <div className="db-type-categories">
               {DB_CATEGORY_ORDER.map((category) => {
                 const categoryDbs = DB_TYPES.filter((db) => DB_CATEGORY[db.value] === category)
@@ -412,7 +545,7 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
                   className="form-input"
                   type="text"
                   value={config.connectionUri ?? ''}
-                  onChange={(e) => update('connectionUri', e.target.value)}
+                  onChange={(e) => handleUriChange(e.target.value)}
                   placeholder={
                     config.type === 'postgres' || config.type === 'cockroachdb'
                       ? '******host:5432/db'
@@ -467,8 +600,8 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
                     className="form-input"
                     type="text"
                     value={config.host ?? ''}
-                    onChange={(e) => update('host', e.target.value)}
-                    placeholder="localhost"
+                    onChange={(e) => handleHostChange(e.target.value)}
+                    placeholder="localhost (or paste any DB URI)"
                   />
                 </div>
                 <div className="form-group">
@@ -477,7 +610,7 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
                     className="form-input"
                     type="number"
                     value={config.port ?? ''}
-                    onChange={(e) => update('port', parseInt(e.target.value) || undefined)}
+                    onChange={(e) => handlePortChange(e.target.value)}
                     placeholder={String(DB_DEFAULT_PORTS[config.type] ?? '')}
                   />
                 </div>
@@ -551,13 +684,23 @@ export function ConnectionModal({ onClose, editConfig }: Props): React.JSX.Eleme
               ) : (
                 <AlertCircle size={14} />
               )}
-              {testResult.success ? 'Connection successful!' : testResult.error ?? 'Connection failed'}
+              {testResult.success ? (testResult.message ?? 'Connection successful!') : testResult.error ?? 'Connection failed'}
             </div>
           )}
         </div>
 
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={handleTest} disabled={testing}>
+          <button
+            className="btn btn-secondary"
+            onClick={handleDetectEngine}
+            disabled={detecting || testing}
+            title="Probe the target endpoint or URI to automatically recognize the database engine"
+          >
+            {detecting
+              ? <><span className="spinner" style={{ width: 12, height: 12 }} /> {t('connection.detecting')}</>
+              : <><Sparkles size={13} /> {t('connection.autoDetect')}</>}
+          </button>
+          <button className="btn btn-secondary" onClick={handleTest} disabled={testing || detecting}>
             {testing ? <><span className="spinner" style={{ width: 12, height: 12 }} /> {t('connection.testing')}</> : t('connection.test')}
           </button>
           <div style={{ flex: 1 }} />

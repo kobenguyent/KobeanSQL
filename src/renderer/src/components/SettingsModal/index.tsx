@@ -15,6 +15,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
   const themeClass = useThemeClass()
   const { t } = useTranslation()
   const [queryLimit, setQueryLimit] = useState(String(settings.queryLimit))
+  const [autoDisconnectEnabled, setAutoDisconnectEnabled] = useState(settings.autoDisconnectEnabled ?? true)
+  const [autoDisconnectMinutes, setAutoDisconnectMinutes] = useState(String(settings.autoDisconnectMinutes ?? 15))
   const [autoCheckEnabled, setAutoCheckEnabled] = useState(settings.updates.autoCheckEnabled)
   const [checkIntervalHours, setCheckIntervalHours] = useState(String(settings.updates.checkIntervalHours))
   const [aiProvider, setAiProvider] = useState<'ollama' | 'openai-compatible'>(settings.ai?.provider ?? 'ollama')
@@ -81,9 +83,14 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
 
   const handleSave = async () => {
     const limit = parseInt(queryLimit, 10)
+    const idleMins = parseInt(autoDisconnectMinutes, 10)
     const interval = parseInt(checkIntervalHours, 10)
     if (isNaN(limit) || limit < 1 || limit > 10000) {
       setError('Query limit must be a number between 1 and 10,000')
+      return
+    }
+    if (isNaN(idleMins) || idleMins < 1 || idleMins > 240) {
+      setError('Auto-disconnect timeout must be between 1 and 240 minutes')
       return
     }
     if (isNaN(interval) || interval < 6 || interval > 168) {
@@ -95,6 +102,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
     try {
       await updateSettings({
         queryLimit: limit,
+        autoDisconnectEnabled,
+        autoDisconnectMinutes: idleMins,
         language,
         updates: {
           ...settings.updates,
@@ -158,6 +167,48 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
               {t('settings.queryLimitHelp')}
             </span>
           </div>
+
+          <div className="form-group">
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={autoDisconnectEnabled}
+                onChange={(e) => setAutoDisconnectEnabled(e.target.checked)}
+              />
+              {t('settings.autoDisconnect')}
+            </label>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>
+              {t('settings.autoDisconnectHelp')}
+            </span>
+          </div>
+          <div className="form-group">
+            <label className="form-label">{t('settings.autoDisconnectMinutes')}</label>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {[5, 15, 30, 60].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  className={`btn ${Number(autoDisconnectMinutes) === preset ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setAutoDisconnectMinutes(String(preset))}
+                  disabled={!autoDisconnectEnabled}
+                  style={{ minHeight: 28, padding: '2px 10px', fontSize: 'var(--font-size-xs)' }}
+                >
+                  {preset}m
+                </button>
+              ))}
+              <input
+                className="form-input"
+                type="number"
+                min={1}
+                max={240}
+                value={autoDisconnectMinutes}
+                onChange={(e) => setAutoDisconnectMinutes(e.target.value)}
+                disabled={!autoDisconnectEnabled}
+                style={{ width: 76 }}
+              />
+            </div>
+          </div>
+
           <div className="form-group">
             <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input

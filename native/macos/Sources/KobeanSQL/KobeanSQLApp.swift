@@ -22,7 +22,16 @@ enum KobeanSQLEntrypoint {
     }
 }
 
+final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
+    var onTerminate: (() -> Void)?
+
+    func applicationWillTerminate(_ notification: Notification) {
+        onTerminate?()
+    }
+}
+
 struct KobeanSQLNativeApp: App {
+    @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
     @State private var state = AppState()
 
     init() {
@@ -34,6 +43,17 @@ struct KobeanSQLNativeApp: App {
         WindowGroup("KobeanSQL") {
             MainWindowView(state: state)
                 .frame(minWidth: 980, minHeight: 640)
+                .onAppear {
+                    let manager = state.manager
+                    appDelegate.onTerminate = {
+                        let sem = DispatchSemaphore(value: 0)
+                        Task.detached {
+                            await manager.disconnectAll()
+                            sem.signal()
+                        }
+                        _ = sem.wait(timeout: .now() + 2.0)
+                    }
+                }
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))

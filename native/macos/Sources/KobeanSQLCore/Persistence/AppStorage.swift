@@ -150,6 +150,8 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
     public var readOnlyMode: Bool
     public var confirmDestructiveQueries: Bool
     public var queryTimeoutSeconds: Int
+    public var autoDisconnectEnabled: Bool
+    public var autoDisconnectMinutes: Int
     public var appearance: AppearanceMode
     public var ai: AISettings
     public var updates: UpdateSettings
@@ -160,6 +162,8 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
         readOnlyMode: Bool = false,
         confirmDestructiveQueries: Bool = true,
         queryTimeoutSeconds: Int = 30,
+        autoDisconnectEnabled: Bool = true,
+        autoDisconnectMinutes: Int = 15,
         appearance: AppearanceMode = .dark,
         ai: AISettings = AISettings(),
         updates: UpdateSettings = UpdateSettings()
@@ -169,6 +173,8 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
         self.readOnlyMode = readOnlyMode
         self.confirmDestructiveQueries = confirmDestructiveQueries
         self.queryTimeoutSeconds = min(max(queryTimeoutSeconds, 5), 120)
+        self.autoDisconnectEnabled = autoDisconnectEnabled
+        self.autoDisconnectMinutes = min(max(autoDisconnectMinutes, 1), 240)
         self.appearance = appearance
         self.ai = ai
         self.updates = updates
@@ -181,6 +187,8 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
         self.readOnlyMode = (try? c.decode(Bool.self, forKey: .readOnlyMode)) ?? false
         self.confirmDestructiveQueries = (try? c.decode(Bool.self, forKey: .confirmDestructiveQueries)) ?? true
         self.queryTimeoutSeconds = min(max((try? c.decode(Int.self, forKey: .queryTimeoutSeconds)) ?? 30, 5), 120)
+        self.autoDisconnectEnabled = (try? c.decode(Bool.self, forKey: .autoDisconnectEnabled)) ?? true
+        self.autoDisconnectMinutes = min(max((try? c.decode(Int.self, forKey: .autoDisconnectMinutes)) ?? 15, 1), 240)
         self.appearance = (try? c.decode(AppearanceMode.self, forKey: .appearance)) ?? .dark
         self.ai = (try? c.decode(AISettings.self, forKey: .ai)) ?? AISettings()
         self.updates = (try? c.decode(UpdateSettings.self, forKey: .updates)) ?? UpdateSettings()

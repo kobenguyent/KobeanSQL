@@ -4,48 +4,203 @@ on:
   workflow_run:
     workflows: ["Release"]
     types: [completed]
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build & publish (e.g. v1.35.0). Defaults to latest tag if empty."
+        required: false
+        type: string
+      prerelease:
+        description: "Mark newly created GitHub Release as pre-release"
+        required: false
+        default: false
+        type: boolean
+      universal:
+        description: "Build universal native macOS binary (arm64 + x86_64)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
   resolve-release:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.resolve.outputs.tag_name }}
+      version: ${{ steps.resolve.outputs.version }}
+      arch_mode: ${{ steps.resolve.outputs.arch_mode }}
     steps:
-      - name: Resolve released tag
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag & ensure GitHub Release exists
         id: resolve
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          latest_tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')"
-          latest_published_at="$(gh release view --repo "$GITHUB_REPOSITORY" --json publishedAt --jq '.publishedAt')"
-          run_created_at="${{ github.event.workflow_run.created_at }}"
 
-          if [ -z "$latest_tag" ] || [ "$latest_published_at" = "null" ]; then
+          arch_mode="native"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.universal }}" = "true" ]; then
+            arch_mode="universal"
+          fi
+          echo "arch_mode=$arch_mode" >> "$GITHUB_OUTPUT"
+
+          tag_name=""
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag_name="${GITHUB_REF_NAME}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag_name="${{ inputs.tag }}"
+            if [ -z "$tag_name" ]; then
+              tag_name="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+            fi
+          else
+            latest_tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName' 2>/dev/null || true)"
+            latest_published_at="$(gh release view --repo "$GITHUB_REPOSITORY" --json publishedAt --jq '.publishedAt' 2>/dev/null || true)"
+            run_created_at="${{ github.event.workflow_run.created_at }}"
+
+            if [ -z "$latest_tag" ] || [ -z "$latest_published_at" ] || [ "$latest_published_at" = "null" ]; then
+              echo "tag_name=" >> "$GITHUB_OUTPUT"
+              echo "version=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            release_published_ts="$(date -d "$latest_published_at" +%s)"
+            run_created_ts="$(date -d "$run_created_at" +%s)"
+
+            if [ "$release_published_ts" -ge "$run_created_ts" ]; then
+              tag_name="$latest_tag"
+            else
+              echo "No release published by triggering run; skipping build."
+              echo "tag_name=" >> "$GITHUB_OUTPUT"
+              echo "version=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          if [ -z "$tag_name" ]; then
+            echo "No release tag resolved; skipping build."
             echo "tag_name=" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          release_published_ts="$(date -d "$latest_published_at" +%s)"
-          run_created_ts="$(date -d "$run_created_at" +%s)"
-
-          if [ "$release_published_ts" -ge "$run_created_ts" ]; then
-            echo "tag_name=$latest_tag" >> "$GITHUB_OUTPUT"
-            exit 0
+          # Ensure a GitHub Release exists for tag pushes & manual dispatches
+          if ! gh release view "$tag_name" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Creating GitHub Release for $tag_name..."
+            EXTRA_ARGS=(--generate-notes)
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.prerelease }}" = "true" ]; then
+              EXTRA_ARGS+=(--prerelease)
+            elif [[ "$tag_name" == *-* ]]; then
+              EXTRA_ARGS+=(--prerelease)
+            fi
+            gh release create "$tag_name" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "KobeanSQL $tag_name" \
+              "${EXTRA_ARGS[@]}"
           fi
 
-          echo "No release published by triggering run; skipping build."
-          echo "tag_name=" >> "$GITHUB_OUTPUT"
-          exit 0
+          version="${tag_name#v}"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build-native-macos:
+    needs: resolve-release
+    if: ${{ needs.resolve-release.outputs.tag_name != '' }}
+    name: Build & Release Native macOS App (SwiftUI/AppKit)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-release.outputs.tag_name }}
+
+      - name: Cache SwiftPM dependencies and build products
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/macos/.build
+          key: ${{ runner.os }}-spm-${{ hashFiles('native/macos/Package.resolved', 'native/macos/Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Run SwiftPM unit tests
+        working-directory: native/macos
+        run: |
+          set -euo pipefail
+          CXX_FLAGS=()
+          if ! echo '#include <memory>' | clang++ -x c++ -fsyntax-only - >/dev/null 2>&1; then
+            SDK_PATH="$(xcrun --show-sdk-path)"
+            if [ -d "$SDK_PATH/usr/include/c++/v1" ]; then
+              CXX_FLAGS=(-Xcxx -nostdinc++ -Xcxx -isystem -Xcxx "$SDK_PATH/usr/include/c++/v1")
+            fi
+          fi
+          swift test ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"}
+
+      - name: Build, ad-hoc sign, and package native macOS app (.app, .dmg, .zip, SHA256SUMS)
+        run: |
+          ./scripts/build-macos-native.sh \
+            --version "${{ needs.resolve-release.outputs.version }}" \
+            --arch "${{ needs.resolve-release.outputs.arch_mode }}"
+
+      - name: Upload native macOS release assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.resolve-release.outputs.tag_name }}"
+          UPLOAD_FILES=()
+          for f in \
+            dist/native-macos/KobeanSQL-*-macOS-native-*.dmg \
+            dist/native-macos/KobeanSQL-*-macOS-native-*.zip \
+            dist/native-macos/KobeanSQL-*-macOS-native-SHA256SUMS.txt; do
+            if [ -f "$f" ]; then
+              UPLOAD_FILES+=("$f")
+            fi
+          done
+          if [ "${#UPLOAD_FILES[@]}" -eq 0 ]; then
+            echo "ERROR: No native macOS release assets were produced." >&2
+            exit 1
+          fi
+          gh release upload "$TAG" "${UPLOAD_FILES[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Upload native macOS workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KobeanSQL-macOS-native-release
+          path: |
+            dist/native-macos/KobeanSQL-*-macOS-native-*.dmg
+            dist/native-macos/KobeanSQL-*-macOS-native-*.zip
+            dist/native-macos/KobeanSQL-*-macOS-native-SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Publish native macOS release summary
+        run: |
+          TAG="${{ needs.resolve-release.outputs.tag_name }}"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 🍎 KobeanSQL Native macOS Release ($TAG)
+
+          Published to GitHub Releases: https://github.com/${{ github.repository }}/releases/tag/${TAG}
+
+          ### Attached Native Artifacts
+          $(ls -lh dist/native-macos/KobeanSQL-*-macOS-native-* | awk '{print "- `" $9 "` (" $5 ")"}')
+          EOF
 
   build:
     needs: resolve-release
     if: ${{ needs.resolve-release.outputs.tag_name != '' }}
-    name: Build (${{ matrix.os }})
+    name: Build Electron (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -87,25 +242,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload release assets (macOS)
+      - name: Upload release assets (macOS Electron)
         if: matrix.os == 'macos-latest'
         run: |
-          ./scripts/build-macos-native.sh
-          for f in dist/*.dmg dist/*.zip dist/native-macos/KobeanSQL-*-macOS-native-*.dmg dist/native-macos/KobeanSQL-*-macOS-native-*.zip; do
+          for f in dist/*.dmg dist/*.zip; do
             [ -f "$f" ] && gh release upload "${{ needs.resolve-release.outputs.tag_name }}" "${f}" --clobber
           done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload native macOS release artifact
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: KobeanSQL-macOS-native-release
-          path: |
-            dist/native-macos/KobeanSQL-*-macOS-native-*.dmg
-            dist/native-macos/KobeanSQL-*-macOS-native-*.zip
-          if-no-files-found: error
 
       - name: Upload release assets (Windows)
         if: matrix.os == 'windows-latest'

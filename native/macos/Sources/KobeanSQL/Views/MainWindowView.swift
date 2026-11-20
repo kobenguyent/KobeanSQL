@@ -347,9 +347,21 @@ private struct StatusBarView: View {
 
             if let conn = state.activeConnection {
                 let connected = state.connectedIDs.contains(conn.id)
-                Text(connected ? "● \(conn.name)" : "○ \(conn.name) (disconnected)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(connected ? GlassTheme.success : .secondary)
+                HStack(spacing: 6) {
+                    Text(connected ? "● \(conn.name)" : "○ \(conn.name) (disconnected)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(connected ? GlassTheme.success : .secondary)
+                    if connected && state.settings.autoDisconnectEnabled {
+                        Text("• idle \(state.settings.autoDisconnectMinutes)m")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .help(
+                    connected && state.settings.autoDisconnectEnabled
+                        ? "Connected to \(conn.name) (\(conn.type.displayName)). Auto-disconnects after \(state.settings.autoDisconnectMinutes) min of inactivity."
+                        : "Connection status for \(conn.name) (\(conn.type.displayName))"
+                )
             }
 
             Button {
@@ -404,6 +416,16 @@ private struct UpdateNotificationBanner: View {
                 Text("\(Int(progress * 100))%")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
+            } else if case .verifying = state.updateDownloadState {
+                ProgressView().controlSize(.small)
+                Text("Verifying…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            } else if case .installing = state.updateDownloadState {
+                ProgressView().controlSize(.small)
+                Text("Closing & updating…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(GlassTheme.success)
             }
 
             Spacer()
@@ -445,7 +467,11 @@ private struct UpdateNotificationBanner: View {
     }
 
     private var isDownloading: Bool {
-        if case .downloading = state.updateDownloadState { return true }
-        return false
+        switch state.updateDownloadState {
+        case .downloading, .verifying, .installing:
+            return true
+        default:
+            return false
+        }
     }
 }

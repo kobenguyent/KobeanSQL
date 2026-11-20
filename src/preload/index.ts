@@ -163,6 +163,8 @@ export interface AISettings {
 
 export interface AppSettings {
   queryLimit: number
+  autoDisconnectEnabled?: boolean
+  autoDisconnectMinutes?: number
   updates: {
     autoCheckEnabled: boolean
     checkIntervalHours: number
@@ -179,6 +181,22 @@ export interface AppSettings {
     }
   }
   language?: string
+}
+
+export interface EngineDetectionResult {
+  engine: DatabaseType
+  confidence: 'high' | 'medium' | 'low'
+  source: string
+  detail: string
+  suggestedPort?: number
+  suggestedSSL?: boolean
+  filePath?: string
+}
+
+export interface AutoDisconnectEventPayload {
+  connectionId: string
+  idleMs: number
+  reason: string
 }
 
 export interface UpdateStatus {
@@ -207,9 +225,11 @@ export const dbAPI = {
     ipcRenderer.invoke('db:save-connection', config),
   deleteConnection: (id: string): Promise<{ success: boolean }> =>
     ipcRenderer.invoke('db:delete-connection', id),
-  testConnection: (config: ConnectionConfig): Promise<{ success: boolean; error?: string }> =>
+  detectEngine: (config: Partial<ConnectionConfig>): Promise<EngineDetectionResult | null> =>
+    ipcRenderer.invoke('db:detect-engine', config),
+  testConnection: (config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType; resolvedConfig?: ConnectionConfig; detectionDetail?: string }> =>
     ipcRenderer.invoke('db:test-connection', config),
-  connect: (config: ConnectionConfig): Promise<{ success: boolean; error?: string }> =>
+  connect: (config: ConnectionConfig): Promise<{ success: boolean; error?: string; detectedType?: DatabaseType; resolvedConfig?: ConnectionConfig; detectionDetail?: string }> =>
     ipcRenderer.invoke('db:connect', config),
   disconnect: (id: string): Promise<{ success: boolean }> => ipcRenderer.invoke('db:disconnect', id),
   isConnected: (id: string): Promise<boolean> => ipcRenderer.invoke('db:is-connected', id),
@@ -289,6 +309,11 @@ export const dbAPI = {
     const handler = (_event: Electron.IpcRendererEvent, connectionId: string): void => callback(connectionId)
     ipcRenderer.on('db:connection-lost', handler)
     return () => ipcRenderer.off('db:connection-lost', handler)
+  },
+  onAutoDisconnected: (callback: (payload: AutoDisconnectEventPayload) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: AutoDisconnectEventPayload): void => callback(payload)
+    ipcRenderer.on('db:auto-disconnected', handler)
+    return () => ipcRenderer.off('db:auto-disconnected', handler)
   },
 
   // Connection logs

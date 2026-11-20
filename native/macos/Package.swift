@@ -38,7 +38,11 @@ let package = Package(
         ),
         .testTarget(
             name: "KobeanSQLCoreTests",
-            dependencies: ["KobeanSQLCore"]
+            dependencies: [
+                "KobeanSQLCore",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio")
+            ]
         )
     ]
 )

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const invokeMock = vi.fn()
+const onMock = vi.fn()
+const offMock = vi.fn()
 
 vi.mock('electron', () => ({
   contextBridge: {
@@ -8,8 +10,8 @@ vi.mock('electron', () => ({
   },
   ipcRenderer: {
     invoke: invokeMock,
-    on: vi.fn(),
-    off: vi.fn()
+    on: onMock,
+    off: offMock
   }
 }))
 
@@ -149,5 +151,31 @@ describe('preload row mutation payload contract', () => {
       error: 'relation "users_backup" already exists'
     })
     expect(invokeMock).toHaveBeenCalledWith('db:copy-table-execute', payload)
+  })
+
+  it('exposes detectEngine and subscribes/unsubscribes onAutoDisconnected', async () => {
+    invokeMock.mockResolvedValue({
+      engine: 'postgres',
+      confidence: 'high',
+      source: 'wire-protocol',
+      detail: 'Detected PostgreSQL wire protocol'
+    })
+    const { dbAPI } = await import('../../../src/preload')
+    const cfg = { host: 'localhost', port: 5432 }
+    await expect(dbAPI.detectEngine(cfg)).resolves.toMatchObject({ engine: 'postgres' })
+    expect(invokeMock).toHaveBeenCalledWith('db:detect-engine', cfg)
+
+    const cb = vi.fn()
+    const unsub = dbAPI.onAutoDisconnected(cb)
+    expect(onMock).toHaveBeenCalledWith('db:auto-disconnected', expect.any(Function))
+    const handler = onMock.mock.calls.find(([ch]) => ch === 'db:auto-disconnected')?.[1]
+    handler?.({}, { connectionId: 'pg-1', idleMs: 900_000, reason: 'Auto-disconnected after 15m of inactivity' })
+    expect(cb).toHaveBeenCalledWith({
+      connectionId: 'pg-1',
+      idleMs: 900_000,
+      reason: 'Auto-disconnected after 15m of inactivity'
+    })
+    unsub()
+    expect(offMock).toHaveBeenCalledWith('db:auto-disconnected', handler)
   })
 })

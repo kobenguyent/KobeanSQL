@@ -24,6 +24,8 @@ export interface AIStoredSettings {
 
 export interface AppSettings {
   queryLimit: number
+  autoDisconnectEnabled?: boolean
+  autoDisconnectMinutes?: number
   updates: UpdateSettings
   ai?: AIStoredSettings
   language?: string
@@ -49,6 +51,8 @@ export interface UpdateCheckCache {
 
 const DEFAULT_SETTINGS: AppSettings = {
   queryLimit: 100,
+  autoDisconnectEnabled: true,
+  autoDisconnectMinutes: 15,
   updates: {
     autoCheckEnabled: true,
     checkIntervalHours: 24,
@@ -57,12 +61,16 @@ const DEFAULT_SETTINGS: AppSettings = {
 }
 const MIN_QUERY_LIMIT = 1
 const MAX_QUERY_LIMIT = 10000
+const MIN_AUTO_DISCONNECT_MINUTES = 1
+const MAX_AUTO_DISCONNECT_MINUTES = 240
 const MIN_UPDATE_INTERVAL_HOURS = 6
 const MAX_UPDATE_INTERVAL_HOURS = 168
 
 function getDefaultSettings(): AppSettings {
   return {
     queryLimit: 100,
+    autoDisconnectEnabled: true,
+    autoDisconnectMinutes: 15,
     updates: {
       autoCheckEnabled: true,
       checkIntervalHours: 24,
@@ -390,11 +398,22 @@ function sanitizeAISettings(value: unknown): AIStoredSettings | undefined {
   return { provider, baseUrl, model }
 }
 
+function sanitizeAutoDisconnectMinutes(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_SETTINGS.autoDisconnectMinutes ?? 15
+  return Math.max(MIN_AUTO_DISCONNECT_MINUTES, Math.min(MAX_AUTO_DISCONNECT_MINUTES, Math.floor(n)))
+}
+
 export function sanitizeSettings(settings: unknown): AppSettings {
   if (!settings || typeof settings !== 'object') return getDefaultSettings()
   const source = settings as Partial<AppSettings>
   const result: AppSettings = {
     queryLimit: sanitizeQueryLimit(source.queryLimit),
+    autoDisconnectEnabled:
+      typeof source.autoDisconnectEnabled === 'boolean'
+        ? source.autoDisconnectEnabled
+        : (DEFAULT_SETTINGS.autoDisconnectEnabled ?? true),
+    autoDisconnectMinutes: sanitizeAutoDisconnectMinutes(source.autoDisconnectMinutes),
     updates: sanitizeUpdateSettings(source.updates)
   }
   const ai = sanitizeAISettings(source.ai)

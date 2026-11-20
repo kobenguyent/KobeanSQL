@@ -211,6 +211,22 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     })
   })
 
+  // Forward idle/sleep auto-disconnect events from the manager to all renderer windows
+  manager.on('auto-disconnected', (payload: { connectionId: string; idleMs: number; reason: string }) => {
+    appLogger.info('Forwarding auto-disconnected event to renderer', payload)
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (win.isDestroyed() || win.webContents.isDestroyed()) return
+      try {
+        win.webContents.send('db:auto-disconnected', payload)
+      } catch (error) {
+        appLogger.warn('Failed to forward auto-disconnected event', {
+          connectionId: payload.connectionId,
+          error: (error as Error).message
+        })
+      }
+    })
+  })
+
   const handleWithLogging = <TArgs extends unknown[], TResult>(
     channel: string,
     handler: (_event: IpcMainInvokeEvent, ...args: TArgs) => Promise<TResult> | TResult
@@ -334,6 +350,11 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
     saveConnections(connections)
     await manager.disconnect(connectionId)
     return { success: true }
+  })
+
+  // Auto-detect database engine from URI, file header, or live endpoint probe
+  handleWithLogging('db:detect-engine', async (_event: IpcMainInvokeEvent, config: Partial<ConnectionConfig>) => {
+    return manager.detectEngine(config)
   })
 
   // Test connection (without saving)
@@ -723,7 +744,14 @@ export function registerIpcHandlers(manager: ConnectionManager, updateService?: 
   })
 
   handleWithLogging('settings:save', async (_event: IpcMainInvokeEvent, settings: unknown) => {
-    saveSettings(sanitizeSettings(settings))
+    const sanitized = sanitizeSettings(settings)
+    saveSettings(sanitized)
+    if (typeof manager.setAutoDisconnectConfig === 'function') {
+      manager.setAutoDisconnectConfig({
+        enabled: sanitized.autoDisconnectEnabled ?? true,
+        timeoutMs: (sanitized.autoDisconnectMinutes ?? 15) * 60 * 1000
+      })
+    }
     updateService?.reschedule()
     return { success: true }
   })

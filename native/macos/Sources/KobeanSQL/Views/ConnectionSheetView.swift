@@ -10,8 +10,10 @@ struct ConnectionSheetView: View {
     @State private var draft: ConnectionConfig
     @State private var useURI: Bool
     @State private var isTesting = false
+    @State private var isDetecting = false
     @State private var testFeedback: String?
     @State private var testSucceeded = false
+    @State private var detectionBanner: String?
 
     private let colorPalette = ["7b7bea", "60a5fa", "4ade80", "fbbf24", "f97316", "f87171", "c084fc"]
 
@@ -41,9 +43,18 @@ struct ConnectionSheetView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     // Categorized DB Picker (matches KobeanSQL categorized DB picker UI)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Database Engine")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                        HStack {
+                            Text("Database Engine")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if let banner = detectionBanner {
+                                Label(banner, systemImage: "sparkles")
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(GlassTheme.accent)
+                                    .lineLimit(1)
+                            }
+                        }
 
                         ForEach(DatabaseCategory.allCases, id: \.rawValue) { category in
                             VStack(alignment: .leading, spacing: 4) {
@@ -54,12 +65,8 @@ struct ConnectionSheetView: View {
                                     ForEach(category.types) { dbType in
                                         let selected = draft.type == dbType
                                         Button {
-                                            draft.type = dbType
-                                            draft.port = dbType.defaultPort
-                                            if (draft.user ?? "").isEmpty {
-                                                draft.user = dbType.defaultUser
-                                            }
-                                            testFeedback = nil
+                                            applyEngineSelection(dbType)
+                                            detectionBanner = nil
                                         } label: {
                                             HStack(spacing: 5) {
                                                 Image(systemName: dbType.symbolName)
@@ -127,7 +134,12 @@ struct ConnectionSheetView: View {
                             HStack {
                                 TextField("/path/to/database.sqlite", text: Binding(
                                     get: { draft.filename ?? "" },
-                                    set: { draft.filename = $0 }
+                                    set: { newValue in
+                                        draft.filename = newValue
+                                        if let detected = DatabaseEngineDetector.detect(fromFilePath: newValue) {
+                                            detectionBanner = detected.detail
+                                        }
+                                    }
                                 ))
                                 .textFieldStyle(.roundedBorder)
                                 Button("Browse…") {
@@ -138,12 +150,15 @@ struct ConnectionSheetView: View {
                                     panel.canCreateDirectories = true
                                     if panel.runModal() == .OK, let url = panel.url {
                                         draft.filename = url.path
+                                        if let detected = DatabaseEngineDetector.detect(fromFilePath: url.path) {
+                                            applyDetection(detected)
+                                        }
                                     }
                                 }
                             }
                         }
                     } else {
-                        Toggle("Connect using Connection URI", isOn: $useURI)
+                        Toggle("Connect using Connection URI (auto-recognizes DB engine)", isOn: $useURI)
                             .toggleStyle(.switch)
                             .controlSize(.small)
 
@@ -153,7 +168,10 @@ struct ConnectionSheetView: View {
                                     .font(.caption.weight(.semibold))
                                 TextField("\(draft.type.rawValue)://user:pass@localhost:\(draft.type.defaultPort ?? 5432)/mydb", text: Binding(
                                     get: { draft.connectionUri ?? "" },
-                                    set: { draft.connectionUri = $0 }
+                                    set: { newValue in
+                                        draft.connectionUri = newValue
+                                        handleURIChange(newValue)
+                                    }
                                 ))
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(size: 12, design: .monospaced))
@@ -163,9 +181,11 @@ struct ConnectionSheetView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Host")
                                         .font(.caption.weight(.semibold))
-                                    TextField("localhost", text: Binding(
+                                    TextField("localhost (or paste any DB URI)", text: Binding(
                                         get: { draft.host ?? "" },
-                                        set: { draft.host = $0 }
+                                        set: { newValue in
+                                            handleHostChange(newValue)
+                                        }
                                     ))
                                     .textFieldStyle(.roundedBorder)
                                 }
@@ -173,9 +193,19 @@ struct ConnectionSheetView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Port")
                                         .font(.caption.weight(.semibold))
-                                    TextField("\(draft.type.defaultPort ?? 5432)", value: $draft.port, format: .number)
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 90)
+                                    TextField("\(draft.type.defaultPort ?? 5432)", value: Binding(
+                                        get: { draft.port },
+                                        set: { newPort in
+                                            draft.port = newPort
+                                            if let newPort, let detected = DatabaseEngineDetector.detect(fromPort: newPort),
+                                               detected.engine.isSupportedNatively,
+                                               detected.engine != draft.type {
+                                                applyDetection(detected, keepPort: newPort)
+                                            }
+                                        }
+                                    ), format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 90)
                                 }
                             }
 
@@ -205,7 +235,7 @@ struct ConnectionSheetView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(draft.type == .influxdb ? "Default Bucket" : (draft.type == .redis ? "Database Index (0-15)" : "Default Database"))
                                         .font(.caption.weight(.semibold))
-                                    TextField(draft.type == .redis ? "0" : "postgres", text: Binding(
+                                    TextField(draft.type == .redis ? "0" : (draft.type == .postgres ? "postgres" : ""), text: Binding(
                                         get: { draft.database ?? "" },
                                         set: { draft.database = $0 }
                                     ))
@@ -240,14 +270,50 @@ struct ConnectionSheetView: View {
 
             HStack {
                 Button {
+                    isDetecting = true
+                    testFeedback = nil
+                    let configToProbe = sanitizedDraft()
+                    Task {
+                        if let detected = await DatabaseEngineDetector.probe(config: configToProbe) {
+                            if detected.engine.isSupportedNatively {
+                                applyDetection(detected)
+                                testSucceeded = true
+                                testFeedback = "Auto-recognized \(detected.engine.displayName) — \(detected.detail)"
+                            } else {
+                                testSucceeded = false
+                                testFeedback = "Detected \(detected.engine.displayName) (\(detected.detail)), which is supported in the Electron edition."
+                            }
+                        } else {
+                            testSucceeded = false
+                            testFeedback = "Could not automatically identify the database engine at this endpoint."
+                        }
+                        isDetecting = false
+                    }
+                } label: {
+                    if isDetecting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Auto-Detect Engine", systemImage: "sparkles")
+                    }
+                }
+                .disabled(isDetecting || isTesting)
+                .help("Probe the target endpoint or URI to automatically select the right database engine & configuration")
+
+                Button {
                     isTesting = true
                     testFeedback = nil
                     let configToTest = sanitizedDraft()
                     Task {
                         do {
-                            let version = try await ConnectionManager.test(configToTest)
+                            let outcome = try await ConnectionManager.testWithDetection(configToTest)
+                            if outcome.detectedType != draft.type && outcome.detectedType.isSupportedNatively {
+                                draft = outcome.resolvedConfig
+                                detectionBanner = outcome.detectionDetail ?? "Auto-recognized \(outcome.detectedType.displayName)"
+                            }
                             testSucceeded = true
-                            testFeedback = "Connected — \(version)"
+                            testFeedback = outcome.detectedType != configToTest.type
+                                ? "Auto-recognized \(outcome.detectedType.displayName) & connected — \(outcome.serverVersion)"
+                                : "Connected — \(outcome.serverVersion)"
                         } catch {
                             testSucceeded = false
                             testFeedback = error.localizedDescription
@@ -261,7 +327,7 @@ struct ConnectionSheetView: View {
                         Label("Test Connection", systemImage: "bolt.horizontal.circle")
                     }
                 }
-                .disabled(isTesting)
+                .disabled(isTesting || isDetecting)
 
                 Spacer()
 
@@ -280,7 +346,91 @@ struct ConnectionSheetView: View {
             }
         }
         .padding(18)
-        .frame(width: 640, height: 590)
+        .frame(width: 660, height: 610)
+    }
+
+    private func applyEngineSelection(_ dbType: DatabaseType) {
+        let prev = draft.type
+        draft.type = dbType
+        draft.port = dbType.defaultPort
+        let trimmedUser = (draft.user ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedUser.isEmpty || trimmedUser == prev.defaultUser {
+            draft.user = dbType.defaultUser.isEmpty ? nil : dbType.defaultUser
+        }
+        if prev == .postgres && draft.database == "postgres" && dbType != .postgres {
+            draft.database = dbType == .redis ? "0" : nil
+        } else if dbType == .redis && (draft.database ?? "").isEmpty {
+            draft.database = "0"
+        }
+        updateDefaultNameIfAuto(previous: prev, next: dbType)
+        testFeedback = nil
+    }
+
+    private func handleURIChange(_ rawURI: String) {
+        guard let detected = DatabaseEngineDetector.detect(fromURI: rawURI) else { return }
+        if detected.engine.isSupportedNatively {
+            applyDetection(detected)
+        } else {
+            detectionBanner = "Detected \(detected.engine.displayName) (Electron edition)"
+        }
+    }
+
+    private func handleHostChange(_ newValue: String) {
+        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        // If user pastes a full connection URI into Host, automatically switch to URI mode & detect engine
+        if trimmed.contains("://"), let detected = DatabaseEngineDetector.detect(fromURI: trimmed) {
+            if detected.engine == .sqlite, let fp = detected.filePath {
+                draft.filename = fp
+                draft.connectionUri = nil
+                useURI = false
+                applyDetection(detected)
+                return
+            }
+            if detected.engine.isSupportedNatively {
+                draft.connectionUri = trimmed
+                useURI = true
+                applyDetection(detected)
+                return
+            }
+        }
+
+        // If user pastes a local SQLite file path into Host
+        if (trimmed.hasPrefix("/") || trimmed.hasPrefix("~/")),
+           let detected = DatabaseEngineDetector.detect(fromFilePath: trimmed) {
+            draft.filename = detected.filePath ?? trimmed
+            useURI = false
+            applyDetection(detected)
+            return
+        }
+
+        draft.host = newValue
+        if let detected = DatabaseEngineDetector.detect(fromHostname: trimmed),
+           detected.engine.isSupportedNatively {
+            applyDetection(detected)
+        }
+    }
+
+    private func applyDetection(_ detected: EngineDetectionResult, keepPort: Int? = nil) {
+        let prev = draft.type
+        var updated = draft.applyingDetection(detected)
+        if let keepPort {
+            updated.port = keepPort
+        }
+        if detected.engine == .sqlite {
+            useURI = false
+        }
+        draft = updated
+        updateDefaultNameIfAuto(previous: prev, next: detected.engine)
+        detectionBanner = detected.detail
+        testFeedback = nil
+    }
+
+    private func updateDefaultNameIfAuto(previous: DatabaseType, next: DatabaseType) {
+        guard previous != next else { return }
+        let trimmed = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == "Local \(previous.displayName)" {
+            draft.name = "Local \(next.displayName)"
+        }
     }
 
     private func sanitizedDraft() -> ConnectionConfig {

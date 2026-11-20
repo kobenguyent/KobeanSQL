@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, nativeTheme } from 'electron'
+import { app, BrowserWindow, shell, nativeTheme, powerMonitor } from 'electron'
 import path from 'path'
 import { ConnectionManager } from './db/manager'
 import { registerIpcHandlers } from './ipc'
@@ -7,7 +7,7 @@ import { appLogger, setupLogger } from './logger'
 import { isSafeExternalUrl, isTrustedRendererUrl } from './security'
 import { createUpdateService } from './update/service'
 import { localStore } from './local-store'
-import {performMigrations} from "./store";
+import { loadSettings, performMigrations } from './store'
 
 import { MetricsCollector } from './db/metrics/collector'
 
@@ -96,6 +96,24 @@ app.whenReady().then(async () => {
 
   await performMigrations()
   await localStore.open(app.getPath('userData'))
+  const initialSettings = loadSettings()
+  manager.setAutoDisconnectConfig({
+    enabled: initialSettings.autoDisconnectEnabled ?? true,
+    timeoutMs: (initialSettings.autoDisconnectMinutes ?? 15) * 60 * 1000
+  })
+  powerMonitor.on('suspend', () => {
+    appLogger.info('System suspending, auto-disconnecting all active database connections')
+    const activeIds = manager.getActiveConnections().map((c) => c.id)
+    void manager.disconnectAll().then(() => {
+      for (const connectionId of activeIds) {
+        manager.emit('auto-disconnected', {
+          connectionId,
+          idleMs: 0,
+          reason: 'Auto-disconnected before system sleep'
+        })
+      }
+    })
+  })
   registerIpcHandlers(manager, updateService)
   createWindow()
   updateService.initialize()

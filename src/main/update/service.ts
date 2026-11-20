@@ -521,10 +521,6 @@ export function createUpdateService(): UpdateService {
       try {
         const ext = path.extname(downloadedFilePath).toLowerCase()
         const updateDir = path.dirname(downloadedFilePath)
-        // How long to wait (in seconds) for the Electron process to exit before
-        // the update script proceeds.  Must be long enough for app.quit() + the
-        // IPC reply round-trip to complete.
-        const APP_QUIT_GRACE_SECS = 3
         // Delay before calling app.quit() so the renderer can receive the IPC
         // reply and show any transitional UI.
         const QUIT_DELAY_MS = 300
@@ -544,20 +540,34 @@ export function createUpdateService(): UpdateService {
           const appBundleName = path.basename(currentAppBundle) // e.g. "KobeanSQL.app"
           const zipPath = downloadedFilePath
 
-          // Write a shell script that waits for the app to quit, extracts the
-          // zip, replaces the current app bundle, and reopens the new version.
+          // Write a shell script that waits for the current process PID to exit, extracts the
+          // zip, strips quarantine, atomically replaces the current app bundle with rollback
+          // safety, and reopens the new version.
           const scriptPath = path.join(updateDir, 'kobeansql-update.sh')
           const script = [
             '#!/bin/bash',
-            `sleep ${APP_QUIT_GRACE_SECS}`,
-            `unzip -o "${shEscape(zipPath)}" -d "${shEscape(updateDir)}/" 2>/dev/null`,
+            'set -euo pipefail',
+            `APP_PID=${process.pid}`,
+            'for _ in $(seq 1 200); do',
+            '  if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi',
+            '  sleep 0.1',
+            'done',
+            `STAGE_DIR="${shEscape(updateDir)}/extract-$$"`,
+            'mkdir -p "$STAGE_DIR"',
+            `ditto -x -k "${shEscape(zipPath)}" "$STAGE_DIR" 2>/dev/null || unzip -o "${shEscape(zipPath)}" -d "$STAGE_DIR/" 2>/dev/null`,
             // Prefer an exact name match; fall back to any .app in the directory.
-            `NEW_APP=$(find "${shEscape(updateDir)}" -maxdepth 2 -name "${shEscape(appBundleName)}" 2>/dev/null | head -1)`,
-            `[ -z "$NEW_APP" ] && NEW_APP=$(find "${shEscape(updateDir)}" -maxdepth 2 -name "*.app" 2>/dev/null | head -1)`,
+            `NEW_APP=$(find "$STAGE_DIR" -maxdepth 2 -name "${shEscape(appBundleName)}" 2>/dev/null | head -1)`,
+            '[ -z "$NEW_APP" ] && NEW_APP=$(find "$STAGE_DIR" -maxdepth 2 -name "*.app" 2>/dev/null | head -1)',
             'if [ -n "$NEW_APP" ]; then',
-            `  rm -rf "${shEscape(currentAppBundle)}"`,
-            `  cp -R "$NEW_APP" "${shEscape(installDir)}/"`,
-            `  open "${shEscape(installDir)}/${shEscape(appBundleName)}"`,
+            '  xattr -cr "$NEW_APP" 2>/dev/null || true',
+            `  BACKUP_APP="$STAGE_DIR/${shEscape(appBundleName)}.previous"`,
+            `  if [ -e "${shEscape(currentAppBundle)}" ]; then mv "${shEscape(currentAppBundle)}" "$BACKUP_APP"; fi`,
+            `  if ! mv "$NEW_APP" "${shEscape(installDir)}/${shEscape(appBundleName)}"; then`,
+            `    if [ -e "$BACKUP_APP" ]; then mv "$BACKUP_APP" "${shEscape(currentAppBundle)}" 2>/dev/null || true; fi`,
+            '    exit 1',
+            '  fi',
+            '  rm -rf "$STAGE_DIR" 2>/dev/null || true',
+            `  open -n "${shEscape(installDir)}/${shEscape(appBundleName)}" || open "${shEscape(installDir)}/${shEscape(appBundleName)}"`,
             'fi',
           ].join('\n')
           await fs.promises.writeFile(scriptPath, script, { mode: 0o755 })
@@ -594,7 +604,12 @@ export function createUpdateService(): UpdateService {
           const newFilePath = downloadedFilePath
           const script = [
             '#!/bin/bash',
-            `sleep ${APP_QUIT_GRACE_SECS}`,
+            'set -euo pipefail',
+            `APP_PID=${process.pid}`,
+            'for _ in $(seq 1 200); do',
+            '  if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi',
+            '  sleep 0.1',
+            'done',
             `cp -f "${shEscape(newFilePath)}" "${shEscape(currentExe)}"`,
             `chmod +x "${shEscape(currentExe)}"`,
             `"${shEscape(currentExe)}" &`,

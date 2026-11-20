@@ -30,7 +30,9 @@ enum StatusLevel {
 enum UpdateDownloadState: Equatable {
     case idle
     case downloading(progress: Double)
+    case verifying
     case ready(fileURL: URL)
+    case installing
     case failed(String)
 }
 
@@ -92,6 +94,7 @@ final class AppState {
     var updateDownloadState: UpdateDownloadState = .idle
     var updateCheckError: String?
     private var updateSchedulerTask: Task<Void, Never>?
+    private var sleepObserver: NSObjectProtocol?
 
     var currentAppVersion: String {
         SemanticVersion.currentAppVersion()
@@ -150,7 +153,72 @@ final class AppState {
                 }
             }
             scheduleAutomaticUpdateChecks()
+            configureConnectionLifecycle()
         }
+    }
+
+    private func configureConnectionLifecycle() {
+        Task {
+            await manager.setAutoDisconnectHandler { [weak self] event in
+                Task { @MainActor [weak self] in
+                    self?.handleAutoDisconnect(event)
+                }
+            }
+            await applyAutoDisconnectSettings()
+        }
+
+        if sleepObserver == nil {
+            sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.willSleepNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.disconnectAllForSleep()
+                }
+            }
+        }
+    }
+
+    func applyAutoDisconnectSettings() async {
+        await manager.configureAutoDisconnect(
+            enabled: settings.autoDisconnectEnabled,
+            timeoutSeconds: TimeInterval(max(1, settings.autoDisconnectMinutes) * 60),
+            sweepIntervalSeconds: 15
+        )
+    }
+
+    func handleAutoDisconnect(_ event: AutoDisconnectEvent) {
+        let id = event.connectionID
+        for tab in tabs where tab.connectionID == id {
+            runningTasks[tab.id]?.cancel()
+            runningTasks.removeValue(forKey: tab.id)
+        }
+        connectedIDs.remove(id)
+        serverVersions.removeValue(forKey: id)
+        let connName = connections.first(where: { $0.id == id })?.name ?? "Database"
+        setStatus("\(event.reason): \(connName)", level: .warning)
+    }
+
+    func disconnectAllForSleep() async {
+        let activeIDs = Array(connectedIDs)
+        guard !activeIDs.isEmpty else { return }
+        await manager.disconnectAll()
+        for id in activeIDs {
+            for tab in tabs where tab.connectionID == id {
+                runningTasks[tab.id]?.cancel()
+                runningTasks.removeValue(forKey: tab.id)
+            }
+            connectedIDs.remove(id)
+            serverVersions.removeValue(forKey: id)
+        }
+        setStatus("Auto-disconnected \(activeIDs.count) connection(s) before macOS sleep", level: .info)
+    }
+
+    func disconnectAllOnShutdown() async {
+        await manager.disconnectAll()
+        connectedIDs.removeAll()
+        serverVersions.removeAll()
     }
 
     private func requiresKeychain(_ config: ConnectionConfig) -> Bool {
@@ -234,12 +302,22 @@ final class AppState {
         }
 
         do {
-            let version = try await manager.connect(hydrated)
+            let outcome = try await manager.connectWithDetection(hydrated)
+            var activeConfig = outcome.resolvedConfig
+            if activeConfig.type != hydrated.type {
+                // Persist auto-recognized DB engine & resolved configuration so future sessions,
+                // dialect quoting, safety guards, and UI badges match the true database engine.
+                if let idx = connections.firstIndex(where: { $0.id == config.id }) {
+                    activeConfig.password = hydrated.password
+                    connections[idx] = activeConfig
+                    try? storage.saveConnections(connections)
+                }
+            }
             connectedIDs.insert(config.id)
-            serverVersions[config.id] = version
+            serverVersions[config.id] = outcome.serverVersion
             let dbs = (try? await manager.databases(config.id)) ?? []
             databasesByConnection[config.id] = dbs
-            let defaultDB = hydrated.database?.isEmpty == false ? hydrated.database : dbs.first
+            let defaultDB = activeConfig.database?.isEmpty == false ? activeConfig.database : dbs.first
             if let defaultDB {
                 selectedDatabaseByConnection[config.id] = defaultDB
             }
@@ -248,7 +326,14 @@ final class AppState {
                 activeTab?.connectionID = config.id
                 activeTab?.database = selectedDatabaseByConnection[config.id]
             }
-            setStatus("Connected to \(config.name) (\(version))", level: .success)
+            if outcome.detectedType != config.type {
+                setStatus(
+                    "Connected to \(activeConfig.name) — auto-recognized \(outcome.detectedType.displayName) (\(outcome.serverVersion))",
+                    level: .success
+                )
+            } else {
+                setStatus("Connected to \(activeConfig.name) (\(outcome.serverVersion))", level: .success)
+            }
         } catch {
             connectedIDs.remove(config.id)
             setStatus("Connection failed: \(error.localizedDescription)", level: .error)
@@ -1174,10 +1259,17 @@ final class AppState {
     func updateSettings(_ newSettings: NativeAppSettings) {
         let intervalChanged = settings.updates.autoCheckEnabled != newSettings.updates.autoCheckEnabled
             || settings.updates.checkIntervalHours != newSettings.updates.checkIntervalHours
-        settings = newSettings
-        try? storage.saveSettings(newSettings)
+        let disconnectChanged = settings.autoDisconnectEnabled != newSettings.autoDisconnectEnabled
+            || settings.autoDisconnectMinutes != newSettings.autoDisconnectMinutes
+        var sanitized = newSettings
+        sanitized.autoDisconnectMinutes = min(max(sanitized.autoDisconnectMinutes, 1), 240)
+        settings = sanitized
+        try? storage.saveSettings(sanitized)
         if intervalChanged {
             scheduleAutomaticUpdateChecks()
+        }
+        if disconnectChanged {
+            Task { await applyAutoDisconnectSettings() }
         }
         setStatus("Settings saved", level: .success)
     }
@@ -1224,12 +1316,13 @@ final class AppState {
             switch outcome {
             case .notModified(let etag):
                 if let etag { updated.updates.cachedETag = etag }
-            case .release(let version, let name, let notes, let releaseURL, let asset, let etag):
+            case .release(let version, let name, let notes, let releaseURL, let asset, let checksumAsset, let etag):
                 updated.updates.cachedLatestVersion = version
                 updated.updates.cachedReleaseName = name
                 updated.updates.cachedReleaseNotes = notes
                 updated.updates.cachedReleaseURL = releaseURL
                 updated.updates.cachedDownloadURL = asset?.browser_download_url
+                updated.updates.cachedChecksumURL = checksumAsset?.browser_download_url
                 updated.updates.cachedAssetName = asset?.name
                 updated.updates.cachedAssetSize = asset?.size
                 updated.updates.cachedETag = etag
@@ -1261,7 +1354,12 @@ final class AppState {
     }
 
     func downloadUpdate() async {
-        if case .downloading = updateDownloadState { return }
+        switch updateDownloadState {
+        case .downloading, .verifying, .installing:
+            return
+        default:
+            break
+        }
         updateDownloadState = .downloading(progress: 0)
 
         if settings.updates.cachedDownloadURL == nil {
@@ -1287,8 +1385,26 @@ final class AppState {
                     }
                 }
             }
+
+            if let checksumURL = settings.updates.cachedChecksumURL,
+               let assetName = settings.updates.cachedAssetName ?? Optional(fileURL.lastPathComponent) {
+                updateDownloadState = .verifying
+                setStatus("Verifying SHA-256 checksum…", level: .info)
+                do {
+                    let checksumsText = try await UpdateService.fetchChecksums(from: checksumURL)
+                    _ = try UpdateService.verifyChecksum(
+                        fileURL: fileURL,
+                        assetName: assetName,
+                        checksumsText: checksumsText
+                    )
+                } catch {
+                    try? FileManager.default.removeItem(at: fileURL)
+                    throw error
+                }
+            }
+
             updateDownloadState = .ready(fileURL: fileURL)
-            setStatus("Update downloaded and ready to install.", level: .success)
+            setStatus("Update downloaded and verified — closing KobeanSQL to install…", level: .success)
         } catch {
             updateDownloadState = .failed(error.localizedDescription)
             setStatus("Update download failed: \(error.localizedDescription)", level: .error)
@@ -1297,15 +1413,22 @@ final class AppState {
 
     func installReadyUpdate() {
         guard case .ready(let fileURL) = updateDownloadState else { return }
-        do {
-            try UpdateService.installAndRelaunch(downloadedFile: fileURL)
-            setStatus("Installing update and relaunching KobeanSQL…", level: .success)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        updateDownloadState = .installing
+        setStatus("Closing active connections & installing update…", level: .info)
+        Task { @MainActor in
+            await disconnectAllOnShutdown()
+            do {
+                try UpdateService.installAndRelaunch(
+                    downloadedFile: fileURL,
+                    processID: ProcessInfo.processInfo.processIdentifier
+                )
+                setStatus("Closing KobeanSQL to apply update and relaunch…", level: .success)
+                try? await Task.sleep(nanoseconds: 250_000_000)
                 NSApplication.shared.terminate(nil)
+            } catch {
+                updateDownloadState = .failed(error.localizedDescription)
+                setStatus("Install failed: \(error.localizedDescription)", level: .error)
             }
-        } catch {
-            updateDownloadState = .failed(error.localizedDescription)
-            setStatus("Install failed: \(error.localizedDescription)", level: .error)
         }
     }
 

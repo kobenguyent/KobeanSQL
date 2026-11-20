@@ -13,12 +13,45 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NATIVE_DIR="$ROOT_DIR/native/macos"
 OUT_DIR="$ROOT_DIR/dist/native-macos"
 CONFIG="${KOBEAN_NATIVE_CONFIG:-release}"
-ARCH="$(uname -m)"
+ARCH_MODE="${KOBEAN_NATIVE_ARCH:-native}" # native | universal
+VERSION="${KOBEAN_NATIVE_VERSION:-}"
 
-if command -v node >/dev/null 2>&1 && [ -f "$ROOT_DIR/package.json" ]; then
-  VERSION="$(node -p "require('$ROOT_DIR/package.json').version")"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version)
+      VERSION="${2#v}"
+      shift 2
+      ;;
+    --arch)
+      ARCH_MODE="$2"
+      shift 2
+      ;;
+    --config)
+      CONFIG="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$VERSION" ]; then
+  if command -v node >/dev/null 2>&1 && [ -f "$ROOT_DIR/package.json" ]; then
+    VERSION="$(node -p "require('$ROOT_DIR/package.json').version")"
+  else
+    VERSION="1.34.0"
+  fi
+fi
+VERSION="${VERSION#v}"
+
+ARCH_FLAGS=()
+if [ "$ARCH_MODE" = "universal" ]; then
+  ARCH="universal"
+  ARCH_FLAGS=(--arch arm64 --arch x86_64)
 else
-  VERSION="1.31.0"
+  ARCH="$(uname -m)"
 fi
 
 echo "==> Building KobeanSQL Native macOS ($CONFIG, $ARCH, v$VERSION)"
@@ -39,8 +72,8 @@ if command -v xcodegen >/dev/null 2>&1 && [ -f "$NATIVE_DIR/project.yml" ]; then
 fi
 
 cd "$NATIVE_DIR"
-swift build -c "$CONFIG" ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"}
-BIN_DIR="$(swift build -c "$CONFIG" ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"} --show-bin-path)"
+swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"}
+BIN_DIR="$(swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"} --show-bin-path)"
 BIN_PATH="$BIN_DIR/KobeanSQL"
 
 if [ ! -x "$BIN_PATH" ]; then
@@ -48,8 +81,14 @@ if [ ! -x "$BIN_PATH" ]; then
   exit 1
 fi
 
-echo "==> Running built-in native self-test suite"
-"$BIN_PATH" --self-test
+if command -v lipo >/dev/null 2>&1; then
+  echo "==> Binary architecture: $(lipo -info "$BIN_PATH" 2>/dev/null || file "$BIN_PATH")"
+fi
+
+if [ "${KOBEAN_NATIVE_SKIP_SELFTEST:-0}" != "1" ]; then
+  echo "==> Running built-in native self-test suite"
+  "$BIN_PATH" --self-test
+fi
 
 # Assemble .app bundle
 APP_BUNDLE="$OUT_DIR/KobeanSQL.app"
@@ -139,7 +178,26 @@ INSTALLER_EOF
   rm -rf "$DMG_STAGE"
 fi
 
+# Generate SHA-256 checksums for release verification
+SHA_VERSIONED="$OUT_DIR/KobeanSQL-${VERSION}-macOS-native-SHA256SUMS.txt"
+SHA_LATEST="$OUT_DIR/KobeanSQL-macOS-native-SHA256SUMS.txt"
+rm -f "$SHA_VERSIONED" "$SHA_LATEST"
+if command -v shasum >/dev/null 2>&1; then
+  echo "==> Generating SHA-256 checksums: $(basename "$SHA_VERSIONED")"
+  (
+    cd "$OUT_DIR"
+    CHECKSUM_TARGETS=()
+    [ -f "$(basename "$ZIP_VERSIONED")" ] && CHECKSUM_TARGETS+=("$(basename "$ZIP_VERSIONED")")
+    [ -f "$(basename "$DMG_VERSIONED")" ] && CHECKSUM_TARGETS+=("$(basename "$DMG_VERSIONED")")
+    if [ "${#CHECKSUM_TARGETS[@]}" -gt 0 ]; then
+      shasum -a 256 "${CHECKSUM_TARGETS[@]}" > "$SHA_VERSIONED"
+      cp "$SHA_VERSIONED" "$SHA_LATEST"
+    fi
+  )
+fi
+
 echo "==> Native macOS build complete!"
 echo "    App Bundle : $APP_BUNDLE"
 echo "    ZIP        : $ZIP_VERSIONED"
 echo "    DMG        : $DMG_VERSIONED"
+echo "    SHA256SUMS : $SHA_VERSIONED"

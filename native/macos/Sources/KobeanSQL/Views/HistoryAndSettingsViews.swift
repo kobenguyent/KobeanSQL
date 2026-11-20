@@ -145,6 +145,34 @@ struct SettingsSheetView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Connection Lifecycle & Auto-Disconnect") {
+                    Toggle("Automatically disconnect idle database connections", isOn: $draft.autoDisconnectEnabled)
+
+                    HStack {
+                        Text("Idle Timeout (minutes)")
+                        Spacer()
+                        HStack(spacing: 4) {
+                            ForEach([5, 15, 30, 60], id: \.self) { preset in
+                                Button("\(preset)m") {
+                                    draft.autoDisconnectMinutes = preset
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(draft.autoDisconnectMinutes == preset ? GlassTheme.accent : .secondary)
+                                .controlSize(.mini)
+                                .disabled(!draft.autoDisconnectEnabled)
+                            }
+                            TextField("15", value: $draft.autoDisconnectMinutes, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 64)
+                                .disabled(!draft.autoDisconnectEnabled)
+                        }
+                    }
+
+                    Text("Prevents database sessions from staying open indefinitely. Active queries are never interrupted, open SQL tabs are preserved, and connections also close automatically when macOS sleeps or quits.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Appearance") {
                     Picker("Theme Mode", selection: $draft.appearance) {
                         ForEach(NativeAppSettings.AppearanceMode.allCases) { mode in
@@ -396,10 +424,23 @@ struct UpdateSheetView: View {
                     }
                     ProgressView(value: progress, total: 1.0)
                 }
+            case .verifying:
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Verifying SHA-256 integrity against GitHub Release checksums…")
+                        .font(.caption.weight(.medium))
+                }
             case .ready(let fileURL):
-                Label("Downloaded \(fileURL.lastPathComponent) — ready to install & relaunch!", systemImage: "checkmark.circle.fill")
+                Label("Downloaded \(fileURL.lastPathComponent) — closing app to install & relaunch!", systemImage: "checkmark.circle.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(GlassTheme.success)
+            case .installing:
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Closing KobeanSQL to install update and relaunch…")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GlassTheme.success)
+                }
             case .failed(let msg):
                 Label(msg, systemImage: "xmark.octagon.fill")
                     .font(.caption)
@@ -458,8 +499,12 @@ struct UpdateSheetView: View {
     }
 
     private var isDownloading: Bool {
-        if case .downloading = state.updateDownloadState { return true }
-        return false
+        switch state.updateDownloadState {
+        case .downloading, .verifying, .installing:
+            return true
+        default:
+            return false
+        }
     }
 }
 

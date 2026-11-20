@@ -145,6 +145,8 @@ export interface QueryHistoryEntry {
 
 export interface AppSettings {
   queryLimit: number
+  autoDisconnectEnabled?: boolean
+  autoDisconnectMinutes?: number
   updates: {
     autoCheckEnabled: boolean
     checkIntervalHours: number
@@ -166,6 +168,22 @@ export interface AppSettings {
     model: string
   }
   language?: string
+}
+
+export interface EngineDetectionResult {
+  engine: DatabaseType
+  confidence: 'high' | 'medium' | 'low'
+  source: string
+  detail: string
+  suggestedPort?: number
+  suggestedSSL?: boolean
+  filePath?: string
+}
+
+export interface AutoDisconnectEventPayload {
+  connectionId: string
+  idleMs: number
+  reason: string
 }
 
 export interface UpdateStatus {

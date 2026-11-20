@@ -1,4 +1,6 @@
 import Foundation
+import NIOCore
+import NIOPosix
 
 /// Built-in verification suite that runs both from `swift test` (via XCTest) and via
 /// `KobeanSQL --self-test` on machines that only have Command Line Tools installed.
@@ -249,16 +251,205 @@ public enum SelfTestSuite {
         let sampleAssets = [
             GitHubReleaseAsset(name: "KobeanSQL-1.35.0-arm64-mac.zip", browser_download_url: "https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-arm64-mac.zip", size: 95_000_000),
             GitHubReleaseAsset(name: "KobeanSQL-1.35.0-macOS-native-arm64.dmg", browser_download_url: "https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-macOS-native-arm64.dmg", size: 8_000_000),
-            GitHubReleaseAsset(name: "KobeanSQL-1.35.0-macOS-native-arm64.zip", browser_download_url: "https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-macOS-native-arm64.zip", size: 7_500_000)
+            GitHubReleaseAsset(name: "KobeanSQL-1.35.0-macOS-native-arm64.zip", browser_download_url: "https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-macOS-native-arm64.zip", size: 7_500_000),
+            GitHubReleaseAsset(name: "KobeanSQL-1.35.0-macOS-native-SHA256SUMS.txt", browser_download_url: "https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-macOS-native-SHA256SUMS.txt", size: 256)
         ]
         let picked = UpdateService.pickBestNativeAsset(from: sampleAssets, arch: "arm64")
         try check(picked?.name == "KobeanSQL-1.35.0-macOS-native-arm64.zip", "Prefer native macOS arm64 .zip over Electron .zip and .dmg")
+        let pickedSum = UpdateService.pickChecksumAsset(from: sampleAssets)
+        try check(pickedSum?.name == "KobeanSQL-1.35.0-macOS-native-SHA256SUMS.txt", "Pick native SHA256SUMS manifest asset")
+
+        let universalAssets = [
+            GitHubReleaseAsset(name: "KobeanSQL-1.35.0-macOS-native-universal.zip", browser_download_url: "https://github.com/kobenguyent/KobeanSQL/releases/download/v1.35.0/KobeanSQL-1.35.0-macOS-native-universal.zip", size: 12_000_000)
+        ]
+        let pickedUniversal = UpdateService.pickBestNativeAsset(from: universalAssets, arch: "x86_64")
+        try check(pickedUniversal?.name == "KobeanSQL-1.35.0-macOS-native-universal.zip", "Accept universal native asset on Intel")
+
+        // SHA-256 verification pass & mismatch detection
+        let checksumTmp = FileManager.default.temporaryDirectory.appendingPathComponent("kobeansql-sha-\(UUID().uuidString).zip")
+        defer { try? FileManager.default.removeItem(at: checksumTmp) }
+        try Data("kobeansql-release-payload".utf8).write(to: checksumTmp)
+        let realDigest = try UpdateService.sha256Hex(of: checksumTmp)
+        let manifest = "\(realDigest)  \(checksumTmp.lastPathComponent)\n"
+        let shaVerified = try UpdateService.verifyChecksum(fileURL: checksumTmp, assetName: checksumTmp.lastPathComponent, checksumsText: manifest)
+        try check(shaVerified, "SHA-256 checksum matches")
+        var shaMismatchCaught = false
+        do {
+            let badManifest = String(repeating: "0", count: 64) + "  \(checksumTmp.lastPathComponent)\n"
+            _ = try UpdateService.verifyChecksum(fileURL: checksumTmp, assetName: checksumTmp.lastPathComponent, checksumsText: badManifest)
+        } catch {
+            shaMismatchCaught = true
+        }
+        try check(shaMismatchCaught, "SHA-256 mismatch throws error")
 
         let installerScript = UpdateService.buildInstallerScript(
             downloadedFile: "/tmp/KobeanSQL-1.35.0-macOS-native-arm64.zip",
             targetAppPath: "/Applications/KobeanSQL.app",
-            workDir: "/tmp"
+            workDir: "/tmp",
+            processID: 42424,
+            selfScriptPath: "/tmp/updater.sh"
         )
-        try check(installerScript.contains("xattr -cr") && installerScript.contains("codesign --force --deep --sign -"), "Installer script strips quarantine & ad-hoc signs")
+        try check(
+            installerScript.contains("APP_PID=42424")
+                && installerScript.contains("kill -0 \"$APP_PID\"")
+                && installerScript.contains("BACKUP_APP=")
+                && installerScript.contains("xattr -cr")
+                && installerScript.contains("codesign --force --deep --sign -")
+                && installerScript.contains("osascript")
+                && installerScript.contains("open -n \"$TARGET_APP\""),
+            "Installer script polls APP_PID, performs atomic backup/rollback, strips quarantine, ad-hoc signs, elevates if needed, and relaunches"
+        )
+
+        // 12. Database Engine Auto-Recognition
+        try check(DatabaseEngineDetector.detect(fromURI: "postgresql://alice@db.local:5432/app")?.engine == .postgres, "Detect PostgreSQL from URI")
+        try check(DatabaseEngineDetector.detect(fromURI: "postgres://root@cluster.cockroachlabs.cloud:26257/defaultdb")?.engine == .cockroachdb, "Detect CockroachDB from postgres:// on 26257")
+        try check(DatabaseEngineDetector.detect(fromURI: "mariadb://root@localhost:3306/shop")?.engine == .mariadb, "Detect MariaDB from URI")
+        try check(DatabaseEngineDetector.detect(fromURI: "mysql://root@localhost:3306/shop")?.engine == .mysql, "Detect MySQL from URI")
+        try check(DatabaseEngineDetector.detect(fromURI: "rediss://default@cache.upstash.io:6379/0")?.engine == .redis, "Detect Redis from rediss:// URI")
+        try check(DatabaseEngineDetector.detect(fromURI: "http://localhost:8123")?.engine == .clickhouse, "Detect ClickHouse from HTTP port 8123")
+        try check(DatabaseEngineDetector.detect(fromURI: "https://localhost:9200")?.engine == .elasticsearch, "Detect Elasticsearch from HTTPS port 9200")
+        try check(DatabaseEngineDetector.detect(fromURI: "http://localhost:8086")?.engine == .influxdb, "Detect InfluxDB from HTTP port 8086")
+        try check(DatabaseEngineDetector.detect(fromURI: "bolt+s://abc.databases.neo4j.io:7687")?.engine == .neo4j, "Detect Neo4j from bolt+s:// URI")
+        try check(DatabaseEngineDetector.detect(fromURI: "sqlite:///tmp/local.db")?.engine == .sqlite, "Detect SQLite from sqlite:// URI")
+
+        // SQLite 3 magic header detection even on non-standard file extension
+        let sqliteMagicFile = FileManager.default.temporaryDirectory.appendingPathComponent("kobeansql-magic-\(UUID().uuidString).dat")
+        defer { try? FileManager.default.removeItem(at: sqliteMagicFile) }
+        var magicData = Data("SQLite format 3\0".utf8)
+        magicData.append(Data(repeating: 0, count: 32))
+        try magicData.write(to: sqliteMagicFile)
+        let fileDetection = DatabaseEngineDetector.detect(fromFilePath: sqliteMagicFile.path)
+        try check(fileDetection?.engine == .sqlite && fileDetection?.source == .fileMagic, "Detect SQLite via 16-byte magic header")
+
+        // Cloud hostname & default port detection
+        try check(DatabaseEngineDetector.detect(fromHostname: "ep-cool.aws.neon.tech")?.engine == .postgres, "Detect Neon PostgreSQL hostname")
+        try check(DatabaseEngineDetector.detect(fromPort: 26257)?.engine == .cockroachdb, "Detect CockroachDB default port")
+        try check(DatabaseEngineDetector.detect(fromPort: 6379)?.engine == .redis, "Detect Redis default port")
+
+        // Applying detected engine updates defaults cleanly
+        let initialDraft = ConnectionConfig(name: "My DB", type: .postgres, host: "localhost", port: 5432, user: "postgres", database: "postgres")
+        let redisDet = DatabaseEngineDetector.detect(fromURI: "rediss://default@cache.upstash.io:6380/0")!
+        let appliedDraft = initialDraft.applyingDetection(redisDet)
+        try check(appliedDraft.type == .redis && appliedDraft.port == 6380 && appliedDraft.ssl == true && appliedDraft.database == "0", "Applying detection updates type, port, SSL, and database")
+
+        // Server version refinement & MySQL/MariaDB wire greeting parser
+        try check(DatabaseEngineDetector.refineFromServerVersion("11.4.2-MariaDB-ubu2404", currentType: .mysql)?.engine == .mariadb, "Refine MySQL -> MariaDB from server version")
+        try check(DatabaseEngineDetector.refineFromServerVersion("8.4.0", currentType: .mariadb)?.engine == .mysql, "Refine MariaDB -> MySQL from server version")
+        try check(DatabaseEngineDetector.refineFromServerVersion("CockroachDB CCL v24.1.0", currentType: .postgres)?.engine == .cockroachdb, "Refine PostgreSQL -> CockroachDB from server version")
+
+        let mariaGreeting: [UInt8] = [0x20, 0x00, 0x00, 0x00, 0x0a] + Array("11.4.2-MariaDB".utf8) + [0x00, 0x01, 0x02]
+        let mysqlGreeting: [UInt8] = [0x20, 0x00, 0x00, 0x00, 0x0a] + Array("8.4.2".utf8) + [0x00, 0x01, 0x02]
+        try check(DatabaseEngineDetector.parseMySQLGreeting(mariaGreeting, port: 3306)?.engine == .mariadb, "Parse MariaDB v10 wire greeting")
+        try check(DatabaseEngineDetector.parseMySQLGreeting(mysqlGreeting, port: 3306)?.engine == .mysql, "Parse MySQL v10 wire greeting")
+
+        // Auto-recognition during connectWithDetection (wrong initial type with SQLite file path)
+        let autoSQLiteCfg = ConnectionConfig(id: "auto-sqlite-test", name: "Auto SQLite", type: .postgres, filename: tmpFile.path)
+        let autoOutcome = try await manager.connectWithDetection(autoSQLiteCfg)
+        try check(autoOutcome.detectedType == .sqlite && autoOutcome.resolvedConfig.type == .sqlite, "connectWithDetection auto-recognizes SQLite file on mismatched type")
+        await manager.disconnect(autoSQLiteCfg.id)
+
+        // 13. Auto DB Disconnection (Idle Timeout) & Settings Clamping
+        let clampedSettings = NativeAppSettings(autoDisconnectEnabled: true, autoDisconnectMinutes: 999)
+        try check(clampedSettings.autoDisconnectEnabled && clampedSettings.autoDisconnectMinutes == 240, "Clamp autoDisconnectMinutes upper bound")
+        let defaultDecoded = try JSONDecoder().decode(NativeAppSettings.self, from: Data("{}".utf8))
+        try check(defaultDecoded.autoDisconnectEnabled && defaultDecoded.autoDisconnectMinutes == 15, "Decode default auto-disconnect settings for legacy settings.json")
+
+        let idleManager = ConnectionManager(autoDisconnectPolicy: AutoDisconnectPolicy(enabled: true, idleTimeoutSeconds: 60, sweepIntervalSeconds: 3600))
+        let idleDemo = DemoDatabaseCatalog.preset(for: .postgres).connectionConfig
+        _ = try await idleManager.connect(idleDemo)
+        let initiallyConnected = await idleManager.isConnected(idleDemo.id)
+        try check(initiallyConnected, "Idle manager connected")
+
+        let baseNow = Date()
+        await idleManager.touch(idleDemo.id, at: baseNow)
+        let beforeThreshold = await idleManager.sweepIdleConnections(now: baseNow.addingTimeInterval(30))
+        let stillConnectedBefore = await idleManager.isConnected(idleDemo.id)
+        try check(beforeThreshold.isEmpty && stillConnectedBefore, "Active connection stays open before idle timeout")
+
+        let afterThreshold = await idleManager.sweepIdleConnections(now: baseNow.addingTimeInterval(65))
+        try check(afterThreshold.count == 1 && afterThreshold[0].connectionID == idleDemo.id, "Idle connection auto-disconnected after timeout")
+        let stillConnectedAfter = await idleManager.isConnected(idleDemo.id)
+        try check(!stillConnectedAfter, "Connection removed after idle auto-disconnect")
+
+        await idleManager.configureAutoDisconnect(enabled: false, timeoutSeconds: 1, sweepIntervalSeconds: 3600)
+        _ = try await idleManager.connect(idleDemo)
+        let disabledSweep = await idleManager.sweepIdleConnections(now: Date().addingTimeInterval(9999))
+        let stillConnectedDisabled = await idleManager.isConnected(idleDemo.id)
+        try check(disabledSweep.isEmpty && stillConnectedDisabled, "Disabled auto-disconnect keeps connection open")
+        await idleManager.disconnectAll()
+
+        // 14. Live TCP Wire-Protocol Engine Probing (MariaDB greeting, Postgres SSLRequest, Redis PING)
+        try await verifyLiveWireProtocolProbes()
+    }
+
+    private static func verifyLiveWireProtocolProbes() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        do {
+            let mariaGreeting: [UInt8] = [0x20, 0x00, 0x00, 0x00, 0x0a] + Array("11.4.2-MariaDB".utf8) + [0x00, 0x01, 0x02]
+            let mariaSrv = try await startMockServer(group: group, initialBanner: mariaGreeting, onRead: nil)
+            defer { _ = mariaSrv.close() }
+            let mariaDet = await DatabaseEngineDetector.probeEndpoint(host: "127.0.0.1", port: mariaSrv.localAddress!.port!, timeout: 1.5)
+            try check(mariaDet?.engine == .mariadb && mariaDet?.source == .wireProtocol, "Live TCP probe detects MariaDB greeting")
+
+            let pgSrv = try await startMockServer(group: group, initialBanner: nil) { bytes in
+                (bytes.count == 8 && bytes[4] == 0x04 && bytes[5] == 0xd2) ? [UInt8(ascii: "N")] : nil
+            }
+            defer { _ = pgSrv.close() }
+            let pgDet = await DatabaseEngineDetector.probeEndpoint(host: "127.0.0.1", port: pgSrv.localAddress!.port!, timeout: 1.5)
+            try check(pgDet?.engine == .postgres && pgDet?.source == .wireProtocol, "Live TCP probe detects PostgreSQL SSLRequest")
+
+            let redisSrv = try await startMockServer(group: group, initialBanner: nil) { bytes in
+                (String(bytes: bytes, encoding: .utf8)?.hasPrefix("PING") == true) ? Array("+PONG\r\n".utf8) : nil
+            }
+            defer { _ = redisSrv.close() }
+            let redisDet = await DatabaseEngineDetector.probeEndpoint(host: "127.0.0.1", port: redisSrv.localAddress!.port!, timeout: 1.5)
+            try check(redisDet?.engine == .redis && redisDet?.source == .wireProtocol, "Live TCP probe detects Redis PING")
+        } catch {
+            try? await group.shutdownGracefully()
+            throw error
+        }
+        try? await group.shutdownGracefully()
+    }
+
+    private static func startMockServer(
+        group: EventLoopGroup,
+        initialBanner: [UInt8]?,
+        onRead: (@Sendable ([UInt8]) -> [UInt8]?)?
+    ) async throws -> Channel {
+        final class MockHandler: ChannelInboundHandler, @unchecked Sendable {
+            typealias InboundIn = ByteBuffer
+            let initialBanner: [UInt8]?
+            let onRead: (@Sendable ([UInt8]) -> [UInt8]?)?
+
+            init(initialBanner: [UInt8]?, onRead: (@Sendable ([UInt8]) -> [UInt8]?)?) {
+                self.initialBanner = initialBanner
+                self.onRead = onRead
+            }
+
+            func channelActive(context: ChannelHandlerContext) {
+                if let banner = initialBanner {
+                    var buf = context.channel.allocator.buffer(capacity: banner.count)
+                    buf.writeBytes(banner)
+                    context.writeAndFlush(NIOAny(buf), promise: nil)
+                }
+            }
+
+            func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+                var buf = unwrapInboundIn(data)
+                guard let bytes = buf.readBytes(length: buf.readableBytes),
+                      let reply = onRead?(bytes) else { return }
+                var out = context.channel.allocator.buffer(capacity: reply.count)
+                out.writeBytes(reply)
+                context.writeAndFlush(NIOAny(out), promise: nil)
+            }
+        }
+
+        return try await ServerBootstrap(group: group)
+            .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .childChannelInitializer { channel in
+                channel.pipeline.addHandler(MockHandler(initialBanner: initialBanner, onRead: onRead))
+            }
+            .bind(host: "127.0.0.1", port: 0)
+            .get()
     }
 }
