@@ -11,52 +11,57 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Top action bar
-            VStack(spacing: 6) {
-                HStack(spacing: 6) {
-                    Button {
-                        state.editingConnection = nil
-                        state.showingConnectionSheet = true
+            // Floating Liquid Glass top action bar
+            LiquidGlassContainer(spacing: 6) {
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        Button {
+                            state.editingConnection = nil
+                            state.showingConnectionSheet = true
+                        } label: {
+                            Label("New Connection", systemImage: "plus.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                        .controlSize(.small)
+
+                        Button {
+                            state.importElectronConnections()
+                        } label: {
+                            Image(systemName: "square.and.arrow.down")
+                        }
+                        .liquidGlassButton()
+                        .controlSize(.small)
+                        .help("Import Connections from Electron App")
+                    }
+
+                    Menu {
+                        Button {
+                            Task { await state.loadAllDemoDatabases() }
+                        } label: {
+                            Label("Load All 8 Demo Databases", systemImage: "sparkles")
+                        }
+                        Divider()
+                        ForEach(DemoDatabaseCatalog.presets) { preset in
+                            Button {
+                                Task { await state.openOrCreateDemoDatabase(type: preset.type) }
+                            } label: {
+                                Label("\(preset.type.displayName) — \(preset.name.replacingOccurrences(of: "Demo — \(preset.type.displayName) ", with: ""))", systemImage: preset.type.symbolName)
+                            }
+                        }
                     } label: {
-                        Label("New Connection", systemImage: "plus.circle.fill")
+                        Label("Try Built-in Demo DBs (8 Types)", systemImage: "sparkles")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(GlassTheme.accent)
+                    .liquidGlassButton(tint: GlassTheme.accent)
                     .controlSize(.small)
-
-                    Button {
-                        state.importElectronConnections()
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                    }
-                    .controlSize(.small)
-                    .help("Import Connections from Electron App")
                 }
-
-                Menu {
-                    Button {
-                        Task { await state.loadAllDemoDatabases() }
-                    } label: {
-                        Label("Load All 8 Demo Databases", systemImage: "sparkles")
-                    }
-                    Divider()
-                    ForEach(DemoDatabaseCatalog.presets) { preset in
-                        Button {
-                            Task { await state.openOrCreateDemoDatabase(type: preset.type) }
-                        } label: {
-                            Label("\(preset.type.displayName) — \(preset.name.replacingOccurrences(of: "Demo — \(preset.type.displayName) ", with: ""))", systemImage: preset.type.symbolName)
-                        }
-                    }
-                } label: {
-                    Label("Try Built-in Demo DBs (8 Types)", systemImage: "sparkles")
-                        .frame(maxWidth: .infinity)
-                }
-                .controlSize(.small)
+                .padding(10)
+                .liquidGlassBar(cornerRadius: 14)
             }
-            .padding(10)
-
-            Divider()
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -68,13 +73,16 @@ struct SidebarView: View {
                             .padding(.horizontal, 4)
 
                         if state.connections.isEmpty {
-                            Text("No saved connections yet. Click \"Try Built-in Demo SQLite DB\" above or \"New Connection\" to get started.")
+                            Text("No saved connections yet. Click \"Try Built-in Demo DBs\" above or \"New Connection\" to get started.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 6)
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .liquidGlassCard(cornerRadius: 10)
                         } else {
-                            ForEach(state.connections) { conn in
+                            LiquidGlassContainer(spacing: 6) {
+                                VStack(spacing: 6) {
+                                    ForEach(state.connections) { conn in
                                 ConnectionRowView(
                                     conn: conn,
                                     isConnected: state.connectedIDs.contains(conn.id),
@@ -116,6 +124,8 @@ struct SidebarView: View {
                                     }
                                 )
                             }
+                                }
+                            }
                         }
                     }
 
@@ -133,12 +143,12 @@ struct SidebarView: View {
                                     Button {
                                         showingCreateTableSheet = true
                                     } label: {
-                                        Image(systemName: "plus.rectangle.on.Folder")
-                                            .symbolVariant(.none)
                                         Image(systemName: "plus")
-                                            .font(.system(size: 11, weight: .bold))
+                                            .font(.system(size: 10, weight: .bold))
+                                            .frame(width: 20, height: 20)
                                     }
                                     .buttonStyle(.plain)
+                                    .liquidGlass(.clear, interactive: true, in: Circle())
                                     .help("Create New Table")
                                 }
                                 Button {
@@ -151,9 +161,11 @@ struct SidebarView: View {
                                     }
                                 } label: {
                                     Image(systemName: "arrow.clockwise")
-                                        .font(.system(size: 11))
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .frame(width: 20, height: 20)
                                 }
                                 .buttonStyle(.plain)
+                                .liquidGlass(.clear, interactive: true, in: Circle())
                                 .help("Refresh Schema")
                             }
                             .padding(.horizontal, 4)
@@ -172,9 +184,27 @@ struct SidebarView: View {
                                 .controlSize(.small)
                             }
 
-                            TextField("Filter tables…", text: $schemaFilter)
-                                .textFieldStyle(.roundedBorder)
-                                .controlSize(.small)
+                            HStack(spacing: 6) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                TextField("Filter tables…", text: $schemaFilter)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 12))
+                                if !schemaFilter.isEmpty {
+                                    Button {
+                                        schemaFilter = ""
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .liquidGlassPill()
 
                             let tables = filteredTables(for: conn.id)
                             if tables.isEmpty {
@@ -224,9 +254,9 @@ struct SidebarView: View {
                                                 }
                                                 .buttonStyle(.plain)
                                             }
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 4)
-                                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 5)
+                                            .liquidGlassCard(cornerRadius: 8, tint: isExpanded ? GlassTheme.color(for: conn.type) : nil, isSelected: isExpanded, interactive: true)
                                             .contextMenu {
                                                 Button("Preview Rows") {
                                                     Task { await state.previewTable(table, connectionID: conn.id, inNewTab: false) }
@@ -328,9 +358,9 @@ struct SidebarView: View {
                                             .lineLimit(1)
                                         Spacer()
                                     }
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 5)
-                                    .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 6)
+                                    .liquidGlassCard(cornerRadius: 8, interactive: true)
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
@@ -388,21 +418,22 @@ private struct ConnectionRowView: View {
                 Circle()
                     .fill(isConnected ? GlassTheme.success : (GlassTheme.color(hex: conn.color) ?? .secondary.opacity(0.4)))
                     .frame(width: 8, height: 8)
+                    .shadow(color: isConnected ? GlassTheme.success.opacity(0.75) : .clear, radius: 4)
 
                 Image(systemName: conn.type.symbolName)
                     .font(.system(size: 12))
                     .foregroundStyle(GlassTheme.color(for: conn.type))
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
                         Text(conn.name.isEmpty ? conn.type.displayName : conn.name)
-                            .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+                            .font(.system(size: 12, weight: isActive ? .semibold : .medium))
                             .lineLimit(1)
                         Text(conn.type.displayName)
                             .font(.system(size: 9, weight: .semibold))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(GlassTheme.color(for: conn.type).opacity(0.18), in: Capsule())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .liquidGlassPill(tint: GlassTheme.color(for: conn.type))
                     }
                     Text(version ?? conn.subtitle)
                         .font(.system(size: 10))
@@ -417,15 +448,13 @@ private struct ConnectionRowView: View {
                         .controlSize(.small)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(isActive ? GlassTheme.accent.opacity(0.18) : Color.secondary.opacity(0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(isActive ? GlassTheme.accent.opacity(0.45) : Color.clear, lineWidth: 1)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .liquidGlassCard(
+                cornerRadius: 10,
+                tint: isActive ? GlassTheme.color(for: conn.type) : nil,
+                isSelected: isActive,
+                interactive: true
             )
             .contentShape(Rectangle())
         }

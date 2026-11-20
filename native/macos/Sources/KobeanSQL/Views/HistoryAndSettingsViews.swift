@@ -9,19 +9,34 @@ struct HistorySheetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Query History (\(state.history.count))", systemImage: "clock.arrow.circlepath")
-                    .font(.title3.weight(.semibold))
-                Spacer()
-                TextField("Search history…", text: $search)
-                    .textFieldStyle(.roundedBorder)
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Label("Query History (\(state.history.count))", systemImage: "clock.arrow.circlepath")
+                        .font(.title3.weight(.semibold))
+                    Spacer()
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        TextField("Search history…", text: $search)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12))
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
                     .frame(width: 220)
-                Button("Clear All", role: .destructive) {
-                    state.clearHistory()
+                    .liquidGlassPill()
+
+                    Button("Clear All", role: .destructive) {
+                        state.clearHistory()
+                    }
+                    .liquidGlassButton(tint: GlassTheme.danger)
+                    .disabled(state.history.isEmpty)
+
+                    Button("Done") { dismiss() }
+                        .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                        .keyboardShortcut(.defaultAction)
                 }
-                .disabled(state.history.isEmpty)
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
             }
 
             Divider()
@@ -34,57 +49,66 @@ struct HistorySheetView: View {
                     Text("No matching query history")
                         .foregroundStyle(.secondary)
                 }
+                .padding(24)
+                .liquidGlassCard(cornerRadius: 16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(filtered) { item in
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Text(item.connectionName)
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(GlassTheme.accent.opacity(0.18), in: Capsule())
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(filtered) { item in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(item.connectionName)
+                                        .font(.caption.weight(.semibold))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 2)
+                                        .liquidGlassPill(tint: GlassTheme.accent)
 
-                            if let db = item.database, !db.isEmpty {
-                                Text(db)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    if let db = item.database, !db.isEmpty {
+                                        Text(db)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    if let err = item.error {
+                                        Label(err, systemImage: "xmark.circle.fill")
+                                            .font(.caption2)
+                                            .foregroundStyle(GlassTheme.danger)
+                                            .lineLimit(1)
+                                    } else {
+                                        Text("\(item.rowCount) rows • \(String(format: "%.0f ms", item.duration * 1000))")
+                                            .font(.caption2.weight(.medium))
+                                            .foregroundStyle(GlassTheme.success)
+                                    }
+
+                                    Text(item.date, style: .relative)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+
+                                Text(item.query)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .lineLimit(3)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-
-                            Spacer()
-
-                            if let err = item.error {
-                                Label(err, systemImage: "xmark.circle.fill")
-                                    .font(.caption2)
-                                    .foregroundStyle(GlassTheme.danger)
-                                    .lineLimit(1)
-                            } else {
-                                Text("\(item.rowCount) rows • \(String(format: "%.0f ms", item.duration * 1000))")
-                                    .font(.caption2)
-                                    .foregroundStyle(GlassTheme.success)
+                            .padding(10)
+                            .liquidGlassCard(cornerRadius: 10, interactive: true)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                state.activeTab?.sql = item.query
+                                dismiss()
                             }
-
-                            Text(item.date, style: .relative)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
                         }
-
-                        Text(item.query)
-                            .font(.system(size: 11, design: .monospaced))
-                            .lineLimit(3)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        state.activeTab?.sql = item.query
-                        dismiss()
-                    }
+                    .padding(.vertical, 2)
                 }
             }
         }
-        .padding(16)
-        .frame(width: 680, height: 480)
+        .padding(18)
+        .frame(width: 680, height: 490)
+        .liquidGlassSheet()
     }
 
     private var filtered: [HistoryEntry] {
@@ -116,6 +140,7 @@ struct SettingsSheetView: View {
                     try? FileManager.default.createDirectory(at: state.storage.directory, withIntermediateDirectories: true)
                     NSWorkspace.shared.activateFileViewerSelecting([state.storage.directory])
                 }
+                .liquidGlassButton()
                 .controlSize(.small)
             }
 
@@ -156,8 +181,7 @@ struct SettingsSheetView: View {
                                 Button("\(preset)m") {
                                     draft.autoDisconnectMinutes = preset
                                 }
-                                .buttonStyle(.bordered)
-                                .tint(draft.autoDisconnectMinutes == preset ? GlassTheme.accent : .secondary)
+                                .liquidGlassButton(prominent: draft.autoDisconnectMinutes == preset, tint: GlassTheme.accent)
                                 .controlSize(.mini)
                                 .disabled(!draft.autoDisconnectEnabled)
                             }
@@ -213,6 +237,7 @@ struct SettingsSheetView: View {
                                 Label("Check for Updates…", systemImage: "arrow.triangle.2.circlepath")
                             }
                         }
+                        .liquidGlassButton()
                         .controlSize(.small)
                         .disabled(state.isCheckingForUpdates)
                     }
@@ -261,22 +286,25 @@ struct SettingsSheetView: View {
             }
             .formStyle(.grouped)
 
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save Settings") {
-                    state.updateSettings(draft)
-                    dismiss()
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Spacer()
+                    Button("Cancel") { dismiss() }
+                        .liquidGlassButton()
+                        .keyboardShortcut(.cancelAction)
+                    Button("Save Settings") {
+                        state.updateSettings(draft)
+                        dismiss()
+                    }
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                    .disabled(AIService.validateLocalURL(draft.ai.baseURL) != nil)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.accent)
-                .disabled(AIService.validateLocalURL(draft.ai.baseURL) != nil)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
-        .frame(width: 580, height: 560)
+        .frame(width: 580, height: 590)
+        .liquidGlassSheet()
     }
 }
 
@@ -314,42 +342,42 @@ struct UpdateSheetView: View {
                         Label("Check Now", systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
+                .liquidGlassButton()
                 .controlSize(.small)
                 .disabled(state.isCheckingForUpdates)
             }
 
             Divider()
 
-            // Version comparison summary box
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("INSTALLED VERSION")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text("v\(state.currentAppVersion)")
-                        .font(.system(size: 15, weight: .bold, design: .monospaced))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            // Version comparison summary cards (Liquid Glass)
+            LiquidGlassContainer(spacing: 12) {
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("INSTALLED VERSION")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text("v\(state.currentAppVersion)")
+                            .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .liquidGlassCard(cornerRadius: 12)
 
-                Image(systemName: "arrow.right")
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("LATEST GITHUB RELEASE")
-                        .font(.caption2.weight(.semibold))
+                    Image(systemName: "arrow.right")
                         .foregroundStyle(.secondary)
-                    Text(latest.map { "v\($0)" } ?? (state.isCheckingForUpdates ? "Checking…" : "Unknown"))
-                        .font(.system(size: 15, weight: .bold, design: .monospaced))
-                        .foregroundStyle(hasUpdate ? GlassTheme.success : .primary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("LATEST GITHUB RELEASE")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(latest.map { "v\($0)" } ?? (state.isCheckingForUpdates ? "Checking…" : "Unknown"))
+                            .font(.system(size: 15, weight: .bold, design: .monospaced))
+                            .foregroundStyle(hasUpdate ? GlassTheme.success : .primary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .liquidGlassCard(cornerRadius: 12, tint: hasUpdate ? GlassTheme.success : nil, isSelected: hasUpdate)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(hasUpdate ? GlassTheme.success.opacity(0.12) : Color.secondary.opacity(0.08))
-                )
             }
 
             if let err = state.updateCheckError {
@@ -406,7 +434,7 @@ struct UpdateSheetView: View {
                     .padding(10)
                 }
                 .frame(minHeight: 130, maxHeight: 200)
-                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                .liquidGlassCard(cornerRadius: 12)
             }
 
             // Download progress / error state
@@ -424,16 +452,22 @@ struct UpdateSheetView: View {
                     }
                     ProgressView(value: progress, total: 1.0)
                 }
+                .padding(10)
+                .liquidGlassCard(cornerRadius: 10, tint: GlassTheme.accent)
             case .verifying:
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text("Verifying SHA-256 integrity against GitHub Release checksums…")
                         .font(.caption.weight(.medium))
                 }
+                .padding(10)
+                .liquidGlassCard(cornerRadius: 10, tint: GlassTheme.accent)
             case .ready(let fileURL):
                 Label("Downloaded \(fileURL.lastPathComponent) — closing app to install & relaunch!", systemImage: "checkmark.circle.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(GlassTheme.success)
+                    .padding(10)
+                    .liquidGlassCard(cornerRadius: 10, tint: GlassTheme.success, isSelected: true)
             case .installing:
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -441,61 +475,69 @@ struct UpdateSheetView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(GlassTheme.success)
                 }
+                .padding(10)
+                .liquidGlassCard(cornerRadius: 10, tint: GlassTheme.success, isSelected: true)
             case .failed(let msg):
                 Label(msg, systemImage: "xmark.octagon.fill")
                     .font(.caption)
                     .foregroundStyle(GlassTheme.danger)
+                    .padding(10)
+                    .liquidGlassCard(cornerRadius: 10, tint: GlassTheme.danger, isSelected: true)
             }
 
             Divider()
 
-            HStack(spacing: 8) {
-                if hasUpdate {
-                    Button("Skip This Version") {
-                        state.ignoreCurrentUpdate()
-                    }
-                    .controlSize(.small)
+            LiquidGlassContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    if hasUpdate {
+                        Button("Skip This Version") {
+                            state.ignoreCurrentUpdate()
+                        }
+                        .liquidGlassButton()
+                        .controlSize(.small)
 
-                    Button("Remind Me Later") {
-                        state.dismissUpdateReminder()
+                        Button("Remind Me Later") {
+                            state.dismissUpdateReminder()
+                            dismiss()
+                        }
+                        .liquidGlassButton()
+                        .controlSize(.small)
+                    }
+
+                    Spacer()
+
+                    Button("Close") {
                         dismiss()
                     }
-                    .controlSize(.small)
-                }
+                    .liquidGlassButton()
+                    .keyboardShortcut(.cancelAction)
 
-                Spacer()
-
-                Button("Close") {
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
-
-                if hasUpdate {
-                    if case .ready = state.updateDownloadState {
-                        Button {
-                            state.installReadyUpdate()
-                        } label: {
-                            Label("Install & Relaunch Now", systemImage: "arrow.triangle.2.circlepath")
+                    if hasUpdate {
+                        if case .ready = state.updateDownloadState {
+                            Button {
+                                state.installReadyUpdate()
+                            } label: {
+                                Label("Install & Relaunch Now", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            .liquidGlassButton(prominent: true, tint: GlassTheme.success)
+                            .keyboardShortcut(.defaultAction)
+                        } else {
+                            Button {
+                                Task { await state.downloadAndInstallUpdate() }
+                            } label: {
+                                Label("Download & Install Update", systemImage: "arrow.down.to.line")
+                            }
+                            .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                            .disabled(isDownloading)
+                            .keyboardShortcut(.defaultAction)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(GlassTheme.success)
-                        .keyboardShortcut(.defaultAction)
-                    } else {
-                        Button {
-                            Task { await state.downloadAndInstallUpdate() }
-                        } label: {
-                            Label("Download & Install Update", systemImage: "arrow.down.to.line")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(GlassTheme.accent)
-                        .disabled(isDownloading)
-                        .keyboardShortcut(.defaultAction)
                     }
                 }
             }
         }
         .padding(18)
         .frame(width: 580)
+        .liquidGlassSheet(accentTint: hasUpdate ? GlassTheme.success : GlassTheme.accent)
     }
 
     private var isDownloading: Bool {
@@ -523,10 +565,10 @@ struct LocalAIPopoverView: View {
                     .font(.headline)
                 Spacer()
                 Text(state.settings.ai.model)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(GlassTheme.accent.opacity(0.18), in: Capsule())
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .liquidGlassPill(tint: GlassTheme.accent)
             }
 
             Picker("Task", selection: $task) {
@@ -545,23 +587,25 @@ struct LocalAIPopoverView: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack {
-                Button {
-                    runAITask()
-                } label: {
-                    if isRunning {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Run Local AI", systemImage: "sparkles")
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Button {
+                        runAITask()
+                    } label: {
+                        if isRunning {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("Run Local AI", systemImage: "sparkles")
+                        }
                     }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.accent)
-                .disabled(isRunning || (task == .generate && prompt.trimmingCharacters(in: .whitespaces).isEmpty))
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                    .disabled(isRunning || (task == .generate && prompt.trimmingCharacters(in: .whitespaces).isEmpty))
 
-                if !output.isEmpty {
-                    Button("Insert into Editor") {
-                        state.activeTab?.sql = output
+                    if !output.isEmpty {
+                        Button("Insert into Editor") {
+                            state.activeTab?.sql = output
+                        }
+                        .liquidGlassButton()
                     }
                 }
             }
@@ -580,12 +624,13 @@ struct LocalAIPopoverView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 160)
-                .padding(8)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                .padding(10)
+                .liquidGlassCard(cornerRadius: 10)
             }
         }
-        .padding(14)
-        .frame(width: 420)
+        .padding(16)
+        .frame(width: 430)
+        .liquidGlassSheet()
     }
 
     private func runAITask() {

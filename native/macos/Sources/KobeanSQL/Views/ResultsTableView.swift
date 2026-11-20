@@ -5,6 +5,7 @@ import KobeanSQLCore
 
 struct ResultsPaneView: View {
     @Bindable var state: AppState
+    @Environment(\.colorScheme) private var colorScheme
     @State private var searchText: String = ""
     @State private var inspectedCell: String?
     @State private var selectedRowIndices: IndexSet = []
@@ -20,53 +21,50 @@ struct ResultsPaneView: View {
         let tab = state.activeTab
         let targetTable = state.activeTargetTable
 
-        VStack(spacing: 0) {
-            // Responsive Results & CRUD Toolbar:
-            // Uses single-row layout when all pills + CRUD controls fit horizontally without wrapping,
-            // and automatically splits into a 2-row bar (Pills + Filter on row 1, CRUD actions on row 2)
-            // when there are many active pills or the window is narrow.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    statusPillsRow(tab: tab, targetTable: targetTable)
-                        .fixedSize(horizontal: true, vertical: false)
-                    Spacer(minLength: 8)
-                    if let result = tab?.activeResult, !result.columns.isEmpty {
-                        if let table = targetTable, table.kind == .table {
-                            crudActionRow(result: result, table: table)
-                                .fixedSize(horizontal: true, vertical: false)
-                            Divider()
-                                .frame(height: 16)
-                        }
-                        filterAndExportRow(result: result, targetTable: targetTable)
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 6) {
+            // Responsive Floating Liquid Glass Results & CRUD Toolbar
+            LiquidGlassContainer(spacing: 8) {
+                ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            statusPillsRow(tab: tab, targetTable: targetTable)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                        Spacer(minLength: 6)
+                        statusPillsRow(tab: tab, targetTable: targetTable)
+                            .fixedSize(horizontal: true, vertical: false)
+                        Spacer(minLength: 8)
                         if let result = tab?.activeResult, !result.columns.isEmpty {
+                            if let table = targetTable, table.kind == .table {
+                                crudActionRow(result: result, table: table)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                Divider()
+                                    .frame(height: 16)
+                            }
                             filterAndExportRow(result: result, targetTable: targetTable)
                                 .fixedSize(horizontal: true, vertical: false)
                         }
                     }
-                    if let result = tab?.activeResult, !result.columns.isEmpty, let table = targetTable, table.kind == .table {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            crudActionRow(result: result, table: table)
-                                .fixedSize(horizontal: true, vertical: false)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                statusPillsRow(tab: tab, targetTable: targetTable)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            Spacer(minLength: 6)
+                            if let result = tab?.activeResult, !result.columns.isEmpty {
+                                filterAndExportRow(result: result, targetTable: targetTable)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                        }
+                        if let result = tab?.activeResult, !result.columns.isEmpty, let table = targetTable, table.kind == .table {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                crudActionRow(result: result, table: table)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
                         }
                     }
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .liquidGlassBar(cornerRadius: 12)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.ultraThinMaterial)
-
-            Divider()
 
             // Body
             if let errorMessage = tab?.errorMessage {
@@ -83,11 +81,12 @@ struct ResultsPaneView: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .liquidGlassCard(cornerRadius: 12, tint: GlassTheme.danger, isSelected: true)
             } else if let result = tab?.activeResult {
                 if result.columns.isEmpty {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 10) {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 28))
+                            .font(.system(size: 30))
                             .foregroundStyle(GlassTheme.success)
                         Text("Statement executed successfully")
                             .font(.headline)
@@ -95,6 +94,8 @@ struct ResultsPaneView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
+                    .padding(24)
+                    .liquidGlassCard(cornerRadius: 16, tint: GlassTheme.success)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     let rows = filteredRows(result)
@@ -161,12 +162,19 @@ struct ResultsPaneView: View {
                             state.setStatus("Copied bulk INSERT SQL (\(target.count) row(s))", level: .success)
                         }
                     )
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(GlassTheme.specularRimGradient(for: colorScheme), lineWidth: 0.85)
+                            .allowsHitTesting(false)
+                    )
                 }
             } else {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     Image(systemName: "play.rectangle.on.rectangle")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 30))
+                        .foregroundStyle(GlassTheme.accentBright.opacity(0.85))
                     Text("Run a query (⌘↩) or select a table from the sidebar")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -183,13 +191,15 @@ struct ResultsPaneView: View {
                     } label: {
                         Label("Try Built-in Demo Databases (8 Types)", systemImage: "sparkles")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(GlassTheme.accent)
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
                     .controlSize(.small)
                 }
+                .padding(28)
+                .liquidGlassCard(cornerRadius: 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .padding(.top, 4)
         .onChange(of: tab?.activeResult?.columns) { _, _ in
             sortColumnIndex = nil
             selectedRowIndices.removeAll()
@@ -266,9 +276,9 @@ struct ResultsPaneView: View {
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .lineLimit(1)
                 }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(GlassTheme.color(for: state.activeConnection?.type ?? .sqlite).opacity(0.18), in: Capsule())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .liquidGlassPill(tint: GlassTheme.color(for: state.activeConnection?.type ?? .sqlite), emphasized: true)
                 .fixedSize(horizontal: true, vertical: false)
                 .help("Active target table: \(targetTable.name)")
             }
@@ -292,9 +302,9 @@ struct ResultsPaneView: View {
                 Text("\(result.rows.count) rows • \(String(format: "%.1f ms", result.duration * 1000))")
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 9)
                     .padding(.vertical, 3)
-                    .background(GlassTheme.accent.opacity(0.16), in: Capsule())
+                    .liquidGlassPill(tint: GlassTheme.accent)
                     .fixedSize(horizontal: true, vertical: false)
 
                 if let sortIdx = sortColumnIndex, sortIdx < result.columns.count {
@@ -311,9 +321,9 @@ struct ResultsPaneView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 10))
                         }
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 3)
-                        .background(GlassTheme.accent.opacity(0.20), in: Capsule())
+                        .liquidGlassPill(tint: GlassTheme.accent, interactive: true, emphasized: true)
                         .fixedSize(horizontal: true, vertical: false)
                     }
                     .buttonStyle(.plain)
@@ -334,9 +344,9 @@ struct ResultsPaneView: View {
                         .buttonStyle(.plain)
                         .help("Clear selection")
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 9)
                     .padding(.vertical, 3)
-                    .background(GlassTheme.success.opacity(0.18), in: Capsule())
+                    .liquidGlassPill(tint: GlassTheme.success, emphasized: true)
                     .fixedSize(horizontal: true, vertical: false)
                 }
 
@@ -350,9 +360,9 @@ struct ResultsPaneView: View {
                             .lineLimit(1)
                     }
                     .foregroundStyle(GlassTheme.warning)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(GlassTheme.warning.opacity(0.14), in: Capsule())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .liquidGlassPill(tint: GlassTheme.warning)
                     .fixedSize(horizontal: true, vertical: false)
                     .help(notice)
                 }
@@ -371,8 +381,7 @@ struct ResultsPaneView: View {
             } label: {
                 Label("Insert", systemImage: "plus")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(GlassTheme.accent)
+            .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
             .controlSize(.small)
             .fixedSize(horizontal: true, vertical: false)
             .help("Insert a single row into \(table.name)")
@@ -382,6 +391,7 @@ struct ResultsPaneView: View {
             } label: {
                 Label("Bulk Insert…", systemImage: "square.stack.3d.up.badge.a.fill")
             }
+            .liquidGlassButton()
             .controlSize(.small)
             .fixedSize(horizontal: true, vertical: false)
             .help("Bulk insert multiple rows (Grid, CSV/TSV, or JSON) into \(table.name)")
@@ -395,6 +405,7 @@ struct ResultsPaneView: View {
             } label: {
                 Label(selCount > 1 ? "Bulk Edit (\(selCount))" : "Edit", systemImage: "pencil")
             }
+            .liquidGlassButton()
             .controlSize(.small)
             .disabled(selectedRowIndices.isEmpty)
             .fixedSize(horizontal: true, vertical: false)
@@ -413,6 +424,7 @@ struct ResultsPaneView: View {
             } label: {
                 Label(selCount > 1 ? "Duplicate (\(selCount))" : "Duplicate", systemImage: "plus.square.on.square")
             }
+            .liquidGlassButton()
             .controlSize(.small)
             .disabled(selectedRowIndices.isEmpty)
             .fixedSize(horizontal: true, vertical: false)
@@ -423,6 +435,7 @@ struct ResultsPaneView: View {
             } label: {
                 Label(selCount > 1 ? "Delete (\(selCount))" : "Delete", systemImage: "trash")
             }
+            .liquidGlassButton(tint: GlassTheme.danger)
             .controlSize(.small)
             .disabled(selectedRowIndices.isEmpty)
             .fixedSize(horizontal: true, vertical: false)
@@ -435,10 +448,28 @@ struct ResultsPaneView: View {
         let rows = filteredRows(result)
 
         HStack(spacing: 6) {
-            TextField("Filter rows…", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.small)
-                .frame(width: 135)
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                TextField("Filter rows…", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11.5))
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(width: 146)
+            .liquidGlassPill()
 
             Menu {
                 let targetRows = selectedRowIndices.isEmpty ? rows : selectedRows(from: rows)
@@ -484,6 +515,7 @@ struct ResultsPaneView: View {
             } label: {
                 Image(systemName: "square.and.arrow.up")
             }
+            .liquidGlassButton()
             .controlSize(.small)
             .frame(width: 34)
             .help("Copy / Select / Export Rows (TSV, CSV, JSON, Bulk INSERT SQL)")
@@ -598,27 +630,33 @@ struct CellInspectorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Cell Value Inspector", systemImage: "magnifyingglass")
-                    .font(.headline)
-                Spacer()
-                Button("Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(value, forType: .string)
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Label("Cell Value Inspector", systemImage: "magnifyingglass")
+                        .font(.headline)
+                    Spacer()
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(value, forType: .string)
+                    }
+                    .liquidGlassButton()
+                    Button("Done", action: onClose)
+                        .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                        .keyboardShortcut(.defaultAction)
                 }
-                Button("Done", action: onClose)
-                    .keyboardShortcut(.defaultAction)
             }
-            Divider()
             ScrollView {
                 Text(value)
                     .font(.system(size: 12, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
             }
+            .liquidGlassCard(cornerRadius: 12)
         }
-        .padding(16)
+        .padding(18)
         .frame(minWidth: 520, minHeight: 340)
+        .liquidGlassSheet()
     }
 }
 
@@ -653,6 +691,7 @@ struct VirtualizedTableGrid: NSViewRepresentable {
 
         let table = NSTableView()
         table.style = .plain
+        table.backgroundColor = .clear
         table.usesAlternatingRowBackgroundColors = true
         table.rowHeight = 24
         table.intercellSpacing = NSSize(width: 10, height: 2)

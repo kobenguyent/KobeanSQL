@@ -276,9 +276,9 @@ private struct AutocompletePopupListView: View {
                         Text(item.kind.rawValue)
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .foregroundStyle(badgeColor(for: item.kind))
-                            .frame(width: 38, alignment: .center)
+                            .frame(width: 40, alignment: .center)
                             .padding(.vertical, 2)
-                            .background(badgeColor(for: item.kind).opacity(0.16), in: RoundedRectangle(cornerRadius: 4))
+                            .liquidGlassPill(tint: badgeColor(for: item.kind))
 
                         Text(item.displayText)
                             .font(.system(size: 12, weight: isSelected ? .semibold : .regular, design: .monospaced))
@@ -293,9 +293,11 @@ private struct AutocompletePopupListView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(isSelected ? GlassTheme.accent.opacity(0.28) : Color.clear)
+                    .liquidGlassCard(
+                        cornerRadius: 7,
+                        tint: isSelected ? GlassTheme.accent : nil,
+                        isSelected: isSelected,
+                        interactive: true
                     )
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -305,7 +307,8 @@ private struct AutocompletePopupListView: View {
             }
             .padding(6)
         }
-        .frame(width: 340, height: min(CGFloat(suggestions.count) * 26 + 12, 240))
+        .frame(width: 348, height: min(CGFloat(suggestions.count) * 28 + 14, 248))
+        .liquidGlassSheet()
     }
 }
 

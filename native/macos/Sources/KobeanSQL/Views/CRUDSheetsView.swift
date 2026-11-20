@@ -55,9 +55,9 @@ struct RowEditorSheetView: View {
                 Spacer()
                 Text(state.activeConnection?.type.displayName ?? "SQL")
                     .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 9)
                     .padding(.vertical, 3)
-                    .background(GlassTheme.accent.opacity(0.18), in: Capsule())
+                    .liquidGlassPill(tint: GlassTheme.accent, emphasized: true)
             }
 
             Divider()
@@ -120,21 +120,24 @@ struct RowEditorSheetView: View {
 
             Divider()
 
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button(isEditMode ? "Save Changes" : "Insert Row") {
-                    submit()
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .liquidGlassButton()
+                        .keyboardShortcut(.cancelAction)
+                    Spacer()
+                    Button(isEditMode ? "Save Changes" : "Insert Row") {
+                        submit()
+                    }
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                    .disabled(isSubmitting)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.accent)
-                .disabled(isSubmitting)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
         .frame(width: 560, height: 440)
+        .liquidGlassSheet()
     }
 
     private func submit() {
@@ -282,28 +285,31 @@ struct CreateTableSheetView: View {
 
             Divider()
 
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Create Table") {
-                    Task {
-                        do {
-                            let specs = columns.map { ($0.name, $0.type, $0.primaryKey, $0.notNull, $0.defaultValue) }
-                            try await state.createTable(name: tableName, columnSpecs: specs)
-                            dismiss()
-                        } catch {
-                            errorMessage = error.localizedDescription
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .liquidGlassButton()
+                        .keyboardShortcut(.cancelAction)
+                    Spacer()
+                    Button("Create Table") {
+                        Task {
+                            do {
+                                let specs = columns.map { ($0.name, $0.type, $0.primaryKey, $0.notNull, $0.defaultValue) }
+                                try await state.createTable(name: tableName, columnSpecs: specs)
+                                dismiss()
+                            } catch {
+                                errorMessage = error.localizedDescription
+                            }
                         }
                     }
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.accent)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
         .frame(width: 640, height: 420)
+        .liquidGlassSheet()
     }
 }
 
@@ -363,9 +369,9 @@ struct CopyTableSheetView: View {
                     .foregroundStyle(.secondary)
                 Text(previewSQL)
                     .font(.system(size: 11, design: .monospaced))
-                    .padding(8)
+                    .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                    .liquidGlassCard(cornerRadius: 10)
             }
 
             if let errorMessage {
@@ -378,27 +384,30 @@ struct CopyTableSheetView: View {
 
             Divider()
 
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Copy Table") {
-                    Task {
-                        do {
-                            try await state.copyTable(source: sourceTable, targetName: targetName, mode: mode)
-                            dismiss()
-                        } catch {
-                            errorMessage = error.localizedDescription
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .liquidGlassButton()
+                        .keyboardShortcut(.cancelAction)
+                    Spacer()
+                    Button("Copy Table") {
+                        Task {
+                            do {
+                                try await state.copyTable(source: sourceTable, targetName: targetName, mode: mode)
+                                dismiss()
+                            } catch {
+                                errorMessage = error.localizedDescription
+                            }
                         }
                     }
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.accent)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
         .frame(width: 500, height: 360)
+        .liquidGlassSheet()
     }
 }
 
@@ -556,9 +565,9 @@ struct BulkInsertSheetView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(8)
+                .padding(10)
                 .frame(height: 85)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                .liquidGlassCard(cornerRadius: 10)
             }
 
             if let errorMessage {
@@ -569,21 +578,24 @@ struct BulkInsertSheetView: View {
 
             Divider()
 
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Execute Bulk Insert") {
-                    submit()
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .liquidGlassButton()
+                        .keyboardShortcut(.cancelAction)
+                    Spacer()
+                    Button("Execute Bulk Insert") {
+                        submit()
+                    }
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                    .disabled(isSubmitting)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.accent)
-                .disabled(isSubmitting)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
         .frame(width: 720, height: 540)
+        .liquidGlassSheet()
     }
 
     private var gridEditorView: some View {
@@ -818,9 +830,9 @@ struct BulkUpdateSheetView: View {
                 Spacer()
                 Text("\(targetRows.count) selected")
                     .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 9)
                     .padding(.vertical, 3)
-                    .background(GlassTheme.accent.opacity(0.18), in: Capsule())
+                    .liquidGlassPill(tint: GlassTheme.accent, emphasized: true)
             }
 
             Text("Select the columns you want to update across all \(targetRows.count) selected rows:")
@@ -892,9 +904,9 @@ struct BulkUpdateSheetView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(8)
+                .padding(10)
                 .frame(height: 72)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                .liquidGlassCard(cornerRadius: 10)
             }
 
             if let errorMessage {
@@ -905,21 +917,24 @@ struct BulkUpdateSheetView: View {
 
             Divider()
 
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Update \(targetRows.count) Row(s)") {
-                    submit()
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .liquidGlassButton()
+                        .keyboardShortcut(.cancelAction)
+                    Spacer()
+                    Button("Update \(targetRows.count) Row(s)") {
+                        submit()
+                    }
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                    .disabled(isSubmitting || updatedValues.isEmpty)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.accent)
-                .disabled(isSubmitting || updatedValues.isEmpty)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
         .frame(width: 600, height: 480)
+        .liquidGlassSheet()
     }
 
     private func submit() {
@@ -1003,7 +1018,7 @@ struct BulkDeleteConfirmSheetView: View {
             }
             .padding(10)
             .frame(height: 110)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            .liquidGlassCard(cornerRadius: 10, tint: GlassTheme.danger)
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -1013,33 +1028,36 @@ struct BulkDeleteConfirmSheetView: View {
 
             Divider()
 
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button(role: .destructive) {
-                    isDeleting = true
-                    errorMessage = nil
-                    Task {
-                        do {
-                            try await state.deleteRows(from: table, columns: columns, rows: targetRows)
-                            onDeleted()
-                            dismiss()
-                        } catch {
-                            errorMessage = error.localizedDescription
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .liquidGlassButton()
+                        .keyboardShortcut(.cancelAction)
+                    Spacer()
+                    Button(role: .destructive) {
+                        isDeleting = true
+                        errorMessage = nil
+                        Task {
+                            do {
+                                try await state.deleteRows(from: table, columns: columns, rows: targetRows)
+                                onDeleted()
+                                dismiss()
+                            } catch {
+                                errorMessage = error.localizedDescription
+                            }
+                            isDeleting = false
                         }
-                        isDeleting = false
+                    } label: {
+                        Text(isDeleting ? "Deleting…" : "Delete \(targetRows.count) Row\(targetRows.count == 1 ? "" : "s")")
                     }
-                } label: {
-                    Text(isDeleting ? "Deleting…" : "Delete \(targetRows.count) Row\(targetRows.count == 1 ? "" : "s")")
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.danger)
+                    .disabled(isDeleting)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.danger)
-                .disabled(isDeleting)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
-        .frame(width: 540, height: 310)
+        .frame(width: 540, height: 315)
+        .liquidGlassSheet(accentTint: GlassTheme.danger)
     }
 }

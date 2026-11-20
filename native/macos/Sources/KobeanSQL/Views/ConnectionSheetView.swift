@@ -31,17 +31,17 @@ struct ConnectionSheetView: View {
                     .font(.title3.weight(.semibold))
                 Spacer()
                 Text(draft.type.category.label)
-                    .font(.caption.weight(.medium))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(GlassTheme.color(for: draft.type).opacity(0.18), in: Capsule())
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .liquidGlassPill(tint: GlassTheme.color(for: draft.type), emphasized: true)
             }
 
             Divider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    // Categorized DB Picker (matches KobeanSQL categorized DB picker UI)
+                    // Categorized DB Picker (Liquid Glass interactive tiles)
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("Database Engine")
@@ -50,47 +50,53 @@ struct ConnectionSheetView: View {
                             Spacer()
                             if let banner = detectionBanner {
                                 Label(banner, systemImage: "sparkles")
-                                    .font(.caption2.weight(.medium))
-                                    .foregroundStyle(GlassTheme.accent)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(GlassTheme.accentBright)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .liquidGlassPill(tint: GlassTheme.accent)
                                     .lineLimit(1)
                             }
                         }
 
                         ForEach(DatabaseCategory.allCases, id: \.rawValue) { category in
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: 5) {
                                 Text(category.label.uppercased())
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundStyle(.tertiary)
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 6)], spacing: 6) {
-                                    ForEach(category.types) { dbType in
-                                        let selected = draft.type == dbType
-                                        Button {
-                                            applyEngineSelection(dbType)
-                                            detectionBanner = nil
-                                        } label: {
-                                            HStack(spacing: 5) {
-                                                Image(systemName: dbType.symbolName)
-                                                    .font(.system(size: 11))
-                                                Text(dbType.displayName)
-                                                    .font(.system(size: 11, weight: .medium))
-                                                    .lineLimit(1)
-                                                Spacer(minLength: 0)
+                                LiquidGlassContainer(spacing: 6) {
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 6)], spacing: 6) {
+                                        ForEach(category.types) { dbType in
+                                            let selected = draft.type == dbType
+                                            Button {
+                                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                                    applyEngineSelection(dbType)
+                                                    detectionBanner = nil
+                                                }
+                                            } label: {
+                                                HStack(spacing: 5) {
+                                                    Image(systemName: dbType.symbolName)
+                                                        .font(.system(size: 11))
+                                                        .foregroundStyle(selected ? GlassTheme.color(for: dbType) : .secondary)
+                                                    Text(dbType.displayName)
+                                                        .font(.system(size: 11, weight: selected ? .semibold : .medium))
+                                                        .lineLimit(1)
+                                                    Spacer(minLength: 0)
+                                                }
+                                                .padding(.horizontal, 9)
+                                                .padding(.vertical, 7)
+                                                .liquidGlassCard(
+                                                    cornerRadius: 9,
+                                                    tint: selected ? GlassTheme.color(for: dbType) : nil,
+                                                    isSelected: selected,
+                                                    interactive: dbType.isSupportedNatively
+                                                )
                                             }
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 6)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 7)
-                                                    .fill(selected ? GlassTheme.color(for: dbType).opacity(0.24) : Color.secondary.opacity(0.08))
-                                            )
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 7)
-                                                    .stroke(selected ? GlassTheme.color(for: dbType) : Color.clear, lineWidth: 1.5)
-                                            )
+                                            .buttonStyle(.plain)
+                                            .disabled(!dbType.isSupportedNatively)
+                                            .opacity(dbType.isSupportedNatively ? 1.0 : 0.38)
+                                            .help(dbType.isSupportedNatively ? dbType.displayName : "\(dbType.displayName) requires a proprietary driver not yet bundled in the native build")
                                         }
-                                        .buttonStyle(.plain)
-                                        .disabled(!dbType.isSupportedNatively)
-                                        .opacity(dbType.isSupportedNatively ? 1.0 : 0.4)
-                                        .help(dbType.isSupportedNatively ? dbType.displayName : "\(dbType.displayName) requires a proprietary driver not yet bundled in the native build")
                                     }
                                 }
                             }
@@ -259,94 +265,99 @@ struct ConnectionSheetView: View {
                                 .font(.caption)
                                 .foregroundStyle(testSucceeded ? GlassTheme.success : GlassTheme.danger)
                         }
-                        .padding(8)
+                        .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background((testSucceeded ? GlassTheme.success : GlassTheme.danger).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                        .liquidGlassCard(cornerRadius: 10, tint: testSucceeded ? GlassTheme.success : GlassTheme.danger, isSelected: true)
                     }
                 }
             }
 
             Divider()
 
-            HStack {
-                Button {
-                    isDetecting = true
-                    testFeedback = nil
-                    let configToProbe = sanitizedDraft()
-                    Task {
-                        if let detected = await DatabaseEngineDetector.probe(config: configToProbe) {
-                            if detected.engine.isSupportedNatively {
-                                applyDetection(detected)
-                                testSucceeded = true
-                                testFeedback = "Auto-recognized \(detected.engine.displayName) — \(detected.detail)"
+            LiquidGlassContainer(spacing: 8) {
+                HStack {
+                    Button {
+                        isDetecting = true
+                        testFeedback = nil
+                        let configToProbe = sanitizedDraft()
+                        Task {
+                            if let detected = await DatabaseEngineDetector.probe(config: configToProbe) {
+                                if detected.engine.isSupportedNatively {
+                                    applyDetection(detected)
+                                    testSucceeded = true
+                                    testFeedback = "Auto-recognized \(detected.engine.displayName) — \(detected.detail)"
+                                } else {
+                                    testSucceeded = false
+                                    testFeedback = "Detected \(detected.engine.displayName) (\(detected.detail)), which is supported in the Electron edition."
+                                }
                             } else {
                                 testSucceeded = false
-                                testFeedback = "Detected \(detected.engine.displayName) (\(detected.detail)), which is supported in the Electron edition."
+                                testFeedback = "Could not automatically identify the database engine at this endpoint."
                             }
+                            isDetecting = false
+                        }
+                    } label: {
+                        if isDetecting {
+                            ProgressView().controlSize(.small)
                         } else {
-                            testSucceeded = false
-                            testFeedback = "Could not automatically identify the database engine at this endpoint."
+                            Label("Auto-Detect Engine", systemImage: "sparkles")
                         }
-                        isDetecting = false
                     }
-                } label: {
-                    if isDetecting {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Auto-Detect Engine", systemImage: "sparkles")
-                    }
-                }
-                .disabled(isDetecting || isTesting)
-                .help("Probe the target endpoint or URI to automatically select the right database engine & configuration")
+                    .liquidGlassButton(tint: GlassTheme.accent)
+                    .disabled(isDetecting || isTesting)
+                    .help("Probe the target endpoint or URI to automatically select the right database engine & configuration")
 
-                Button {
-                    isTesting = true
-                    testFeedback = nil
-                    let configToTest = sanitizedDraft()
-                    Task {
-                        do {
-                            let outcome = try await ConnectionManager.testWithDetection(configToTest)
-                            if outcome.detectedType != draft.type && outcome.detectedType.isSupportedNatively {
-                                draft = outcome.resolvedConfig
-                                detectionBanner = outcome.detectionDetail ?? "Auto-recognized \(outcome.detectedType.displayName)"
+                    Button {
+                        isTesting = true
+                        testFeedback = nil
+                        let configToTest = sanitizedDraft()
+                        Task {
+                            do {
+                                let outcome = try await ConnectionManager.testWithDetection(configToTest)
+                                if outcome.detectedType != draft.type && outcome.detectedType.isSupportedNatively {
+                                    draft = outcome.resolvedConfig
+                                    detectionBanner = outcome.detectionDetail ?? "Auto-recognized \(outcome.detectedType.displayName)"
+                                }
+                                testSucceeded = true
+                                testFeedback = outcome.detectedType != configToTest.type
+                                    ? "Auto-recognized \(outcome.detectedType.displayName) & connected — \(outcome.serverVersion)"
+                                    : "Connected — \(outcome.serverVersion)"
+                            } catch {
+                                testSucceeded = false
+                                testFeedback = error.localizedDescription
                             }
-                            testSucceeded = true
-                            testFeedback = outcome.detectedType != configToTest.type
-                                ? "Auto-recognized \(outcome.detectedType.displayName) & connected — \(outcome.serverVersion)"
-                                : "Connected — \(outcome.serverVersion)"
-                        } catch {
-                            testSucceeded = false
-                            testFeedback = error.localizedDescription
+                            isTesting = false
                         }
-                        isTesting = false
+                    } label: {
+                        if isTesting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("Test Connection", systemImage: "bolt.horizontal.circle")
+                        }
                     }
-                } label: {
-                    if isTesting {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Test Connection", systemImage: "bolt.horizontal.circle")
+                    .liquidGlassButton()
+                    .disabled(isTesting || isDetecting)
+
+                    Spacer()
+
+                    Button("Cancel") { dismiss() }
+                        .liquidGlassButton()
+                        .keyboardShortcut(.cancelAction)
+
+                    Button("Save & Connect") {
+                        let finalConfig = sanitizedDraft()
+                        state.saveConnection(finalConfig)
+                        dismiss()
+                        Task { await state.connect(finalConfig) }
                     }
+                    .liquidGlassButton(prominent: true, tint: GlassTheme.accent)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .disabled(isTesting || isDetecting)
-
-                Spacer()
-
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-
-                Button("Save & Connect") {
-                    let finalConfig = sanitizedDraft()
-                    state.saveConnection(finalConfig)
-                    dismiss()
-                    Task { await state.connect(finalConfig) }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(GlassTheme.accent)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
-        .frame(width: 660, height: 610)
+        .frame(width: 660, height: 615)
+        .liquidGlassSheet(accentTint: GlassTheme.color(for: draft.type))
     }
 
     private func applyEngineSelection(_ dbType: DatabaseType) {

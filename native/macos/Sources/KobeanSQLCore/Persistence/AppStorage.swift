@@ -138,8 +138,8 @@ public struct NativeAppSettings: Codable, Hashable, Sendable {
         public var id: String { rawValue }
         public var label: String {
             switch self {
-            case .dark: "Dark Glass"
-            case .light: "Light Glass"
+            case .dark: "Dark Liquid Glass"
+            case .light: "Light Liquid Glass"
             case .system: "Follow macOS"
             }
         }
